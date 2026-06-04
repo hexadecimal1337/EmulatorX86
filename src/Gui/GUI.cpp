@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <sstream>
 #include "GUI.h"
 #include "Extern/ImGui/imgui_internal.h"
 #include "Extern/ImGui/imgui_memory_editor.h"
@@ -31,6 +32,7 @@ void GUI::render() {
 		settingsWindow();
 		modal.renderModal();
 		memoryWindows.renderEditors();
+		assemblyWindow();
 		StepStatus status = em.getLastStatus();
 		if(status < 0) {
 			em.resetStatus();
@@ -81,8 +83,8 @@ void GUI::mainWindow() {
 				memoryWindows.openNewEditor();
 			if (ImGui::MenuItem((const char*)u8"Ассемблер"))
 				sm.set.isAssembler = true;
-			if (ImGui::MenuItem((const char*)u8"Дизассемблер"))
-				sm.set.isDisassembler = true;
+			//if (ImGui::MenuItem((const char*)u8"Дизассемблер"))
+			//	sm.set.isDisassembler = true;
 			if (ImGui::MenuItem((const char*)u8"Консоль программы"))
 				sm.set.isConsole = true;
 			ImGui::EndMenu();
@@ -93,14 +95,10 @@ void GUI::mainWindow() {
 		ImGui::EndMenuBar();
 	}
 	ImGui::End();
-	if (sm.set.isAssembler) {
-		ImGui::Begin((const char*)u8"Ассемблер",&sm.set.isAssembler);
-		ImGui::End();
-	}
-	if (sm.set.isDisassembler) {
-		ImGui::Begin((const char*)u8"Дизассемблер",&sm.set.isDisassembler);
-		ImGui::End();
-	}
+	//if (sm.set.isDisassembler) {
+	//	ImGui::Begin((const char*)u8"Дизассемблер",&sm.set.isDisassembler);
+	//	ImGui::End();
+	//}
 	if (sm.set.isConsole) {
 		ImGui::Begin((const char*)u8"Консоль программы", &sm.set.isConsole);
 		ImGui::End();
@@ -120,14 +118,14 @@ void GUI::controlWindow() {
 	else
 		ImGui::Text((const char*)u8"Состояние: Приостановлено");
 		
-	if (ImGui::Button((const char*)u8"Шаг с заходом"))
+	if (ImGui::Button((const char*)u8"Шаг"))
 		em.makeStepIn();
-	if (ImGui::Button((const char*)u8"Шаг с обходом")) {
-		//em.makeStepDetour();
-	}
-	if (ImGui::Button((const char*)u8"Шаг с выходом")) {
-		//em.makeStepOut();
-	}
+	//if (ImGui::Button((const char*)u8"Шаг с обходом")) {
+	//	//em.makeStepDetour();
+	//}
+	//if (ImGui::Button((const char*)u8"Шаг с выходом")) {
+	//	//em.makeStepOut();
+	//}
 	if (ImGui::Button((const char*)u8"Выполнить")) {
 		em.run();
 	}
@@ -185,6 +183,35 @@ void GUI::settingsWindow() {
 		if (ImGui::Button((const char*)u8"Сбросить настройки")) {
 			resetSettings();
 		}
+		ImGui::End();
+	}
+}
+
+void GUI::assemblyWindow() {
+	if (sm.set.isAssembler) {
+		ImGui::Begin((const char*)u8"Ассемблер", &sm.set.isAssembler,ImGuiWindowFlags_MenuBar);
+		ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+		if (ImGui::BeginMenuBar()) {
+			if (ImGui::MenuItem((const char*)u8"Скомпилировать")) {
+				if (!em.isWorking()) {
+					StepStatus status = assembler.compile();
+					if(status < 0)
+						modal.openModal((const char*)u8"Ошибка компиляции", (const char*)u8"Проверьте строки с ошибками");
+				}
+				else
+					modal.openModal((const char*)u8"Ошибка компиляции", (const char*)u8"Остановите программу");
+			}
+			if (ImGui::MenuItem((const char*)u8"Сохранить")) {
+				if(!assembler.saveFileAs())
+					modal.openModal((const char*)"Ошибка сохранения файла", (const char*)u8"Не удалось сохранить asm файл");
+			}
+			if (ImGui::MenuItem((const char*)u8"Загрузить")) {
+				if (!assembler.loadFileAs())
+					modal.openModal((const char*)"Ошибка загрузки файла", (const char*)u8"Не удалось загрузить asm файл");
+			}
+			ImGui::EndMenuBar();
+		}
+		assembler.render("TextEditor");
 		ImGui::End();
 	}
 }
@@ -288,4 +315,128 @@ void MemoryWindows::setSize(int newSize) {
 	editors.clear();
 	while(editors.size() < 9 && editors.size() < newSize)
 		editors.push_back(new MemoryEditor());
+}
+
+Assembler::Assembler() {
+	auto lang = getAsmLanguage();
+	textEditor.SetLanguageDefinition(lang);
+}
+
+void Assembler::render(const char* title) {
+	textEditor.Render(title);
+}
+
+StepStatus Assembler::compile() {
+	std::vector<std::string> lines = textEditor.GetTextLines();
+	std::vector<BYTE> code;
+	std::vector<std::pair<int, StepStatus>> errors;
+	StepStatus result = im.parseCode(lines, code, errors);
+	if (result == EM_OK) {
+		for (int i = 0; i < code.size(); ++i)
+			mm.writeMem(mm.ctx.EIP + i, code[i]);
+	}
+	TextEditor::ErrorMarkers markers;
+	for (const auto& error : errors)
+		markers.insert(std::pair<int, std::string>(error.first, getErrorMsg(error.second)));
+	textEditor.SetErrorMarkers(markers);
+	return result;
+}
+
+bool Assembler::saveFileAs() {
+	OPENFILENAMEW open = {};
+	wchar_t filePath[MAX_PATH];
+	filePath[0] = L'\0';
+	open.lStructSize = sizeof(OPENFILENAMEA);
+	open.lpstrFilter = L"Код на языке ассемблера (*.asm)\0*.asm\0\0";
+	open.lpstrDefExt = L"asm";
+	open.lpstrFile = filePath;
+	open.nMaxFile = MAX_PATH;
+	open.lpstrTitle = L"Выберите путь для сохранения asm файла";
+	open.Flags = OFN_FILEMUSTEXIST | OFN_OVERWRITEPROMPT;
+	if (GetSaveFileNameW(&open)) {
+		if (saveFile(filePath))
+			return true;
+		else
+			return false;
+	}
+	else
+		return true;
+}
+
+bool Assembler::saveFile(const wchar_t* filePath) {
+	std::fstream file(filePath, std::ios::out);
+	if (!file.is_open())
+		return false;
+	std::string text = textEditor.GetText();
+	file.write(text.c_str(), text.size());
+	file.close();
+	return true;
+}
+
+bool Assembler::loadFileAs() {
+	OPENFILENAMEW open = {};
+	wchar_t filePath[MAX_PATH];
+	filePath[0] = L'\0';
+	open.lStructSize = sizeof(OPENFILENAMEA);
+	open.lpstrFilter = L"Код на языке ассемблера (*.asm)\0*.asm\0\0";
+	open.lpstrFile = filePath;
+	open.nMaxFile = MAX_PATH;
+	open.lpstrTitle = L"Выберите asm файл для чтения";
+	open.Flags = OFN_FILEMUSTEXIST;
+	if (GetOpenFileNameW(&open)) {
+		if (loadFile(filePath))
+			return true;
+		else
+			return false;
+	}
+	else
+		return true;
+}
+
+bool Assembler::loadFile(const wchar_t* filePath) {
+	std::fstream file(filePath, std::ios::in);
+	if (!file.is_open())
+		return false;
+	std::stringstream strStream;
+	strStream << file.rdbuf();
+	textEditor.SetText(strStream.str());
+	file.close();
+	return true;
+}
+
+TextEditor::LanguageDefinition Assembler::getAsmLanguage() {
+	TextEditor::LanguageDefinition lang =  textEditor.GetLanguageDefinition();
+	static const char* const identifiers[] = {
+			"or", "and", "xor", "cmp", "jmp", "jb", "jnb", "je", "jne", "jna", "jbe", "sub", "add", "test", "mov", "int3", "push", "pop"
+	};
+	for (auto& k : identifiers) {
+		TextEditor::Identifier id;
+		id.mDeclaration = "Instructions";
+		lang.mIdentifiers.insert(std::make_pair(std::string(k), id));
+	}
+	static const char* keywords[] = {"eax","ebx", "ecx", "edx", "ebp", "esp", "esi", "edi", "eip"};
+	for (auto keyword : keywords)
+		lang.mKeywords.insert(std::string(keyword));
+	return lang;
+}
+
+std::string Assembler::getErrorMsg(StepStatus error) {
+	std::string result;
+	switch (error) {
+		case EM_INVALID_INSTRUCTION:
+			result = (const char*)u8"Неизвестная инструкция:\nНеверный опкод\nПроверьте код команды";
+			break;
+		case EM_INVALID_OPERAND:
+			result = (const char*)u8"Ошибка операнда:\nОдин из операндов неверен\nПроверьте операнды/инструкцию";
+			break;
+		case EM_INVALID_ADDRESS:
+			result = (const char*)u8"Ошибка доступа:\nПопытка чтения/записи/выполнения в недопустимой памяти\nПроверьте EIP/операнды/инструкцию";
+			break;
+		case EM_INVALID_SYNTAX:
+			result = (const char*)u8"Ошибка синтаксиса:\nНеизвестный синтаксис\nПроверьте правильность написания инструкции";
+			break;
+		default:
+			result = (const char*)u8"Неизвестная ошибка";
+	}
+	return result;
 }

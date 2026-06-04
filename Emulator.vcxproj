@@ -162,6 +162,7 @@
     <ClCompile Include="src\Extern\ImGui\imgui_impl_win32.cpp" />
     <ClCompile Include="src\Extern\ImGui\imgui_tables.cpp" />
     <ClCompile Include="src\Extern\ImGui\imgui_widgets.cpp" />
+    <ClCompile Include="src\Extern\ImGui\TextEditor.cpp" />
     <ClCompile Include="src\Gui\GraphicsManager.cpp" />
     <ClCompile Include="src\Gui\GUI.cpp" />
     <ClCompile Include="src\Logic\EmulatorManager.cpp" />
@@ -182,6 +183,7 @@
     <ClInclude Include="src\Extern\ImGui\imstb_rectpack.h" />
     <ClInclude Include="src\Extern\ImGui\imstb_textedit.h" />
     <ClInclude Include="src\Extern\ImGui\imstb_truetype.h" />
+    <ClInclude Include="src\Extern\ImGui\TextEditor.h" />
     <ClInclude Include="src\Gui\GraphicsManager.h" />
     <ClInclude Include="src\Gui\GUI.h" />
     <ClInclude Include="src\Logic\EmulatorManager.h" />

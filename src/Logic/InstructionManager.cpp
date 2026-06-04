@@ -1,5 +1,6 @@
 #include "InstructionManager.h"
 #include <bitset>
+#include <regex>
 
 //StepStatus InstructionManager::makeStep() {
 //	StepStatus status = EM_OK;
@@ -31,8 +32,9 @@ StepStatus InstructionManager::decodeInstruction(InstructionData& instData) {
 	case CMP:
 		status = decodeCMP(instData, 4);
 		break;
-	case JB: JNB: JE: JNE: JNA: JA:
+	case JB: case JNB: case JE: case JNE: case JBE: case JA:
 		status = decodeRelativeJump(instData);
+		//status = decodeJMP(instData);
 		break;
 	case SUB:
 		status = decodeSUB(instData, 4);
@@ -52,8 +54,15 @@ StepStatus InstructionManager::decodeInstruction(InstructionData& instData) {
 	case JMP:
 		status = decodeJMP(instData);
 		break;
+	case PUSH:
+		status = decodePUSH(instData);
+		break;
+	case POP:
+		status = decodePOP(instData);
+		break;
 	default:
 		status = EM_INVALID_INSTRUCTION;
+		break;
 	}
 	if (instData.instAddr + instData.instSize >= 0x8000'0000)
 		status = EM_INVALID_ADDRESS;
@@ -86,7 +95,7 @@ void InstructionManager::processInstruction(InstructionData instData) {
 	case JNE:
 		processJNE(instData);
 		break;
-	case JNA:
+	case JBE:
 		processJNA(instData);
 		break;
 	case JA:
@@ -107,8 +116,265 @@ void InstructionManager::processInstruction(InstructionData instData) {
 	case JMP:
 		processJMP(instData);
 		break;
+	case PUSH:
+		processPUSH(instData);
+		break;
+	case POP:
+		processPOP(instData);
+		break;
 	}
 	mm.ctx.EIP += instData.instSize;
+}
+
+StepStatus InstructionManager::parseCode(const std::vector<std::string>& lines, std::vector<BYTE>& bytes, std::vector<std::pair<int, StepStatus>>& errors) {
+	StepStatus status = EM_OK;
+	std::vector<Label> labels = getLabels(lines);
+	setLabelsAddrs(labels, lines);
+	for (int i = 0; i < lines.size();++i) {
+		status = parseLine(lines[i], bytes, labels);
+		if (status != EM_OK)
+			errors.push_back(std::pair<int, StepStatus>(i + 1,status));
+	}
+	if (errors.size() >= 1)
+		status = errors[0].second;
+	return status;
+}
+
+std::vector<Label> InstructionManager::getLabels(const std::vector<std::string>& lines) {
+	std::vector<Label> labels;
+	std::smatch matches;
+	std::regex reg(R"(^ *(\w+): *(?:$|\/\/[\w\W]*))");
+	for (int i = 0; i < lines.size();++i) {
+		if (std::regex_search(lines[i], matches, reg)) {
+			Label label;
+			label.name = matches[1].str();
+			label.line = i;
+			label.address = 0;
+			labels.push_back(label);
+		}
+	}
+	return labels;
+}
+
+void InstructionManager::setLabelsAddrs(std::vector<Label>& labels, const std::vector<std::string>& lines) {
+	std::vector<BYTE> bytes;
+	for (int i = 0; i < lines.size(); ++i) {
+		parseLine(lines[i], bytes, labels);
+		for (Label& label : labels)
+			if (label.line == i)
+				label.address = mm.ctx.EIP + bytes.size();
+	}
+}
+
+bool InstructionManager::isLabel(const std::string& line) {
+	const std::regex reg(R"(^ *(\w+): *(?:$|\/\/[\w\W]*))");
+	return std::regex_match(line, reg);
+}
+
+StepStatus InstructionManager::parseLine(const std::string& line, std::vector<BYTE>& bytesOut, const std::vector<Label>& labels) {
+	if (isEmptyLine(line) || isLabel(line))
+		return EM_OK;
+
+	std::vector<BYTE> bytes;
+	std::smatch matches;
+	std::regex reg3(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
+	std::regex reg2(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
+	std::regex reg1(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
+	std::regex reg0(R"(^([a-z|A-Z|3]+) *(?:$|\/\/[\w\W]*))");
+	if(!std::regex_search(line, matches, reg3))
+		if(!std::regex_search(line, matches, reg2))
+			if(!std::regex_search(line, matches, reg1))
+				if(!std::regex_search(line, matches, reg0))
+					return EM_INVALID_SYNTAX;
+	bytes.push_back(parseOpcode(matches[1].str()));
+	if (bytes[0] == 0)
+		return EM_INVALID_INSTRUCTION;
+	for (int i = 2; i < matches.size(); ++i) {
+		std::vector<BYTE> operandBytes = parseOperand(matches[i].str(), labels);
+		if (operandBytes[0] == 0)
+			return EM_INVALID_OPERAND;
+		bytes.insert(bytes.end(),operandBytes.begin(),operandBytes.end());
+	}
+	StepStatus status = validateInstruction(bytes);
+	if (status == EM_BREAKPOINT)
+		status = EM_OK;
+	if(status == EM_OK)
+		bytesOut.insert(bytesOut.end(), bytes.begin(), bytes.end());
+	return status;
+}
+
+BYTE InstructionManager::parseOpcode(std::string opcodeStr) {
+	for (char& sym : opcodeStr) sym = std::tolower(sym);
+	const std::map<std::string, Opcode>& opcodeDict = getOpcodeDict();
+	if (!opcodeDict.contains(opcodeStr))
+		return 0;
+	return opcodeDict.at(opcodeStr);
+}
+
+std::string InstructionManager::parseLabel(const std::vector<Label>& labels, const std::string& labelName) {
+	std::string result = "";
+	for (const Label& label : labels) {
+		if (label.name == labelName) {
+			result = std::to_string(label.address);
+		}
+	}
+	return result;
+}
+
+std::vector<BYTE> InstructionManager::parseOperand(std::string operandStr, const std::vector<Label>& labels) {
+	for (char& sym : operandStr) sym = std::tolower(sym);
+	std::smatch matches;
+	std::regex reg(R"((\[[\w+*]+\])|([\w]+))");
+	if (std::regex_search(operandStr, matches, reg)) {
+		if (matches[1].matched)
+			operandStr = matches[1].str();
+		else
+			operandStr = matches[2].str();
+		
+	}
+	
+	std::vector<BYTE> bytes;
+	if (isEffAddr((operandStr)))
+		return parseEffAddr(operandStr, labels);
+	else {
+		if (isNumber(operandStr))
+			bytes = parseNum(operandStr);
+		else {
+			const std::map<std::string, OperandType>& operandDict = getOperandDict();
+			if (operandDict.contains(operandStr))
+				bytes.push_back(operandDict.at(operandStr));
+			else {
+				std::string num = parseLabel(labels, operandStr);
+				if (num == "")
+					bytes.push_back(0);
+				else
+					bytes = parseNum(num);
+			}
+		}
+	}
+	return bytes;
+}
+
+
+
+bool InstructionManager::isEffAddr(const std::string& operandStr){
+	const std::regex reg(R"(\[[\w +*]+\])");
+	return std::regex_match(operandStr, reg);
+}
+
+std::vector<BYTE> InstructionManager::parseEffAddr(const std::string& operandStr, const std::vector<Label>& labels) {
+	std::vector<BYTE> bytes;
+	std::regex effReg3(R"(\[ *(\w+) *\* *(\w+) *\])");
+	std::regex effReg2(R"(\[ *(\w+) *\+ *(\w+) *\])");
+	std::regex effReg1(R"(\[ *(\w+) *\])");
+	std::smatch matches;
+	if (std::regex_search(operandStr, matches, effReg3)) {
+		bytes = parseOperand(matches[1].str(), labels);
+		std::vector<BYTE> bytes2 = parseOperand(matches[2].str(), labels);
+		if (bytes[0] != 0 && bytes2[0] != 0 && !isNumber(matches[1].str())) {
+			if (isNumber(matches[2].str())) {
+				bytes[0] |= EAD_MUL32_READ << 4;
+				bytes.insert(bytes.end(), ++bytes2.begin(), bytes2.end());
+			}
+			else {
+				bytes[0] |= EAD_MULREG_READ << 4;
+				bytes.insert(bytes.end(), bytes2.begin(), bytes2.end());
+			}
+		}
+		else
+			bytes[0] = 0;
+
+	}
+	else if (std::regex_search(operandStr, matches, effReg2)) {
+		bytes = parseOperand(matches[1].str(), labels);
+		std::vector<BYTE> bytes2 = parseOperand(matches[2].str(), labels);
+		if (bytes[0] != 0 && bytes2[0] != 0 && !isNumber(matches[1].str())) {
+			if (isNumber(matches[2].str())) {
+				bytes[0] |= EAD_ADD32_READ << 4;
+				bytes.insert(bytes.end(), ++bytes2.begin(), bytes2.end());
+			}
+			else {
+				bytes[0] |= EAD_ADDREG_READ << 4;
+				bytes.insert(bytes.end(), bytes2.begin(), bytes2.end());
+			}
+		}
+		else
+			bytes[0] = 0;
+	}
+	else if (std::regex_search(operandStr, matches, effReg1)) {
+		bytes = parseOperand(matches[1].str(), labels);
+		if (bytes[0] != 0) {
+			bytes[0] |= EAD_READ << 4;
+		}
+	}
+	else bytes.push_back(0);
+	return bytes;
+}
+
+bool InstructionManager::isNumber(const std::string& operandStr) {
+	const std::regex reg(R"(^[\dabcde]+h|\d+)");
+	return std::regex_match(operandStr, reg);
+}
+
+std::vector<BYTE> InstructionManager::parseNum(const std::string& operandStr) {
+	std::vector<BYTE> bytes;
+	bytes.push_back(OT_RAWDATA);
+	std::smatch matches;
+	const std::regex regHex(R"(^([\dabcde]+)h$)");
+	const std::regex regDec(R"(^(\d+)$)");
+	int num = 0;
+	if (std::regex_search(operandStr, matches, regHex))
+		num = std::stoi(matches[1].str(), 0, 16);
+	else if (std::regex_search(operandStr, matches, regDec))
+		num = std::stoi(matches[1].str(), 0, 10);
+	else bytes[0] = 0;
+	bytes.resize(5);
+	memcpy(bytes.data() + 1, &num, sizeof(int));
+	return bytes;
+}
+
+const std::map<std::string, Opcode>& InstructionManager::getOpcodeDict() {
+	static const std::map<std::string, Opcode> opcodeDict{
+		std::pair<const std::string, const Opcode> {"or",OR},
+		std::pair<const std::string, const Opcode> {"and",AND},
+		std::pair<const std::string, const Opcode> {"xor",XOR},
+		std::pair<const std::string, const Opcode> {"cmp",CMP},
+		std::pair<const std::string, const Opcode> {"jb",JB},
+		std::pair<const std::string, const Opcode> {"jnb",JNB},
+		std::pair<const std::string, const Opcode> {"je",JE},
+		std::pair<const std::string, const Opcode> {"jne",JNE},
+		std::pair<const std::string, const Opcode> {"jbe",JBE},
+		std::pair<const std::string, const Opcode> {"ja",JA},
+		std::pair<const std::string, const Opcode> {"sub",SUB},
+		std::pair<const std::string, const Opcode> {"add",ADD},
+		std::pair<const std::string, const Opcode> {"test",TEST},
+		std::pair<const std::string, const Opcode> {"mov",MOV},
+		std::pair<const std::string, const Opcode> {"int3",INT3},
+		std::pair<const std::string, const Opcode> {"jmp",JMP},
+		std::pair<const std::string, const Opcode> {"push",PUSH},
+		std::pair<const std::string, const Opcode> {"pop",POP}
+	};
+	return opcodeDict;
+}
+
+const std::map<std::string, OperandType>& InstructionManager::getOperandDict() {
+	static const std::map<std::string, OperandType> operandDict{
+		std::pair<const std::string, const OperandType> {"eax",OT_A},
+		std::pair<const std::string, const OperandType> {"ebx",OT_B},
+		std::pair<const std::string, const OperandType> {"ecx",OT_C},
+		std::pair<const std::string, const OperandType> {"edx",OT_D},
+		std::pair<const std::string, const OperandType> {"esp",OT_SP},
+		std::pair<const std::string, const OperandType> {"ebp",OT_BP},
+		std::pair<const std::string, const OperandType> {"esi",OT_SI},
+		std::pair<const std::string, const OperandType> {"edi",OT_DI},
+		std::pair<const std::string, const OperandType> {"eip",OT_IP}
+	};
+	return operandDict;
+}
+
+bool InstructionManager::isEmptyLine(const std::string& line) {
+	const std::regex reg(R"(^ *(?:$|\/\/[\w\W]*))");
+	return std::regex_match(line,reg);
 }
 
 bool InstructionManager::validateEmulatedAddress(OperandData op) {
@@ -127,8 +393,11 @@ OperandData InstructionManager::decodeOperand(DWORD addr, int rawDataSize, StepS
 
 	*status = mm.readMem(addr, op.mainType);
 	op.mainType = (OperandType)(op.mainType & 0x0F);
-	if (*status < 0 || op.mainType > OT_RAWDATA || op.mainType == OT_NONE)
+	if (*status < 0 || op.mainType > OT_RAWDATA || op.mainType == OT_NONE) {
+		if (*status >= 0)
+			*status = EM_INVALID_OPERAND;
 		return op;
+	}
 
 	*status = mm.readMem(addr,op.effAddr);
 	op.effAddr = (EffectiveAddrData)((op.effAddr >> 4) & 0x7);
@@ -202,6 +471,33 @@ void InstructionManager::writeOperand(OperandData op, DWORD data, int size) {
 		else if (size == 4)
 			*(DWORD*)addr = data;
 	}
+}
+
+StepStatus InstructionManager::validateInstruction(const std::vector<BYTE> bytes) {
+	std::vector<BYTE> reserve(bytes.size() + 5);
+	StepStatus status = EM_OK;
+	for (int i = 0; i < reserve.size() && status == EM_OK; ++i) {
+		BYTE byte;
+		status = mm.readMem(mm.ctx.EIP + i, byte);
+		reserve[i] = byte;
+	}
+	if (status != EM_OK)
+		return status;
+	for (int i = 0; i < bytes.size() + 5 && status == EM_OK; ++i) {
+		if (i < bytes.size())
+			status = mm.writeMem(mm.ctx.EIP + i, bytes[i]);
+		else
+			status = mm.writeMem(mm.ctx.EIP + i, BYTE(0));
+	}
+	
+	InstructionData instData;
+	if(status == EM_OK)
+		status = decodeInstruction(instData);
+
+	for (int i = 0; i < reserve.size(); ++i)
+		mm.writeMem(mm.ctx.EIP + i, reserve[i]);
+
+	return status;
 }
 
 DWORD InstructionManager::readOperand(OperandData op, int size) {
@@ -543,7 +839,7 @@ StepStatus InstructionManager::decodeRelativeJump(InstructionData& instData) {
 	StepStatus status = EM_OK;
 	int counter = 1;
 	int lastOperandSize = 0;
-	instData.op1 = decodeOperand(mm.ctx.EIP + counter, 2, &status, &lastOperandSize);
+	instData.op1 = decodeOperand(mm.ctx.EIP + counter, 4, &status, &lastOperandSize);
 	if (status < 0)
 		return status;
 	if (instData.op1.effAddr != EAD_DIRECT || instData.op1.mainType != OT_RAWDATA)
@@ -556,33 +852,51 @@ StepStatus InstructionManager::decodeRelativeJump(InstructionData& instData) {
 }
 
 void InstructionManager::processJB(InstructionData instData) {
-	if (mm.ctx.EFLAGS[EFLAG_CF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (mm.ctx.EFLAGS[EFLAG_CF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 void InstructionManager::processJNB(InstructionData instData) {
-	if (!mm.ctx.EFLAGS[EFLAG_CF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (!mm.ctx.EFLAGS[EFLAG_CF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 void InstructionManager::processJE(InstructionData instData) {
-	if (mm.ctx.EFLAGS[EFLAG_ZF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (mm.ctx.EFLAGS[EFLAG_ZF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 void InstructionManager::processJNE(InstructionData instData) {
-	if (!mm.ctx.EFLAGS[EFLAG_ZF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (!mm.ctx.EFLAGS[EFLAG_ZF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 void InstructionManager::processJNA(InstructionData instData) {
-	if (mm.ctx.EFLAGS[EFLAG_CF] && mm.ctx.EFLAGS[EFLAG_ZF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (mm.ctx.EFLAGS[EFLAG_CF] && mm.ctx.EFLAGS[EFLAG_ZF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 void InstructionManager::processJA(InstructionData instData) {
-	if (!mm.ctx.EFLAGS[EFLAG_CF] && !mm.ctx.EFLAGS[EFLAG_ZF])
-		mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+	if (!mm.ctx.EFLAGS[EFLAG_CF] && !mm.ctx.EFLAGS[EFLAG_ZF]) {
+		//mm.ctx.EIP = mm.ctx.EIP + *(short*)&instData.op1.rawData;
+		processJMP(instData);
+		mm.ctx.EIP -= instData.instSize;
+	}
 }
 
 StepStatus InstructionManager::decodeSUB(InstructionData& instData, int opSize) {
@@ -758,3 +1072,63 @@ bool InstructionManager::checkParityFlag(DWORD num) {
 	return !(bits.count() % 2);
 }
 
+StepStatus InstructionManager::decodePUSH(InstructionData& instData) {
+	StepStatus status = EM_OK;
+	int counter = 1;
+	int lastOperandSize = 0;
+	instData.op1 = decodeOperand(mm.ctx.EIP + counter, 4, &status, &lastOperandSize);
+	if (status < 0)
+		return status;
+	counter += lastOperandSize;
+
+	instData.instSize = counter;
+	instData.instAddr = mm.ctx.EIP;
+	instData.ticks = 2;
+	return status;
+}
+
+StepStatus InstructionManager::processPUSH(InstructionData& instData) {
+	bool isSrcEmulated = false;
+	StepStatus status = EM_OK;
+	DWORD srcData = 0;
+	void* src = getOperandAddr(instData.op1, isSrcEmulated, status);
+	//void* dest = getOperandAddr(instData.op1, isDestEmulated, status);
+	if (isSrcEmulated)
+		mm.readMem((DWORD)src, srcData);
+	else
+		srcData = *(DWORD*)src;
+	status = mm.writeMem((DWORD)mm.ctx.ESP, srcData);
+	if (status >= 0)
+		mm.ctx.ESP -= 4;
+	return status;
+}
+
+StepStatus InstructionManager::decodePOP(InstructionData& instData) {
+	StepStatus status = EM_OK;
+	int counter = 1;
+	int lastOperandSize = 0;
+	instData.op1 = decodeOperand(mm.ctx.EIP + counter, 4, &status, &lastOperandSize);
+	if (status < 0)
+		return status;
+	counter += lastOperandSize;
+
+	instData.instSize = counter;
+	instData.instAddr = mm.ctx.EIP;
+	instData.ticks = 2;
+	return status;
+}
+
+StepStatus InstructionManager::processPOP(InstructionData& instData) {
+	bool isDestEmulated = false, isSrcEmulated = false;
+	StepStatus status = EM_OK;
+	DWORD srcData = 0;
+	void* dest = getOperandAddr(instData.op1, isDestEmulated, status);
+	status = mm.readMem((DWORD)mm.ctx.ESP + 4, srcData);
+	if (status >= 0 && isDestEmulated)
+		mm.writeMem((DWORD)dest, srcData);
+	else if(status >= 0)
+		*(DWORD*)dest = srcData;
+	if (status >= 0)
+		mm.ctx.ESP += 4;
+	return status;
+}

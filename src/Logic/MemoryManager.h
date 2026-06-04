@@ -84,8 +84,8 @@ inline StepStatus MemoryManager::writeMem(DWORD addr, T data, ByteDirection BDir
 
 	if (BDir == BDir_Little_Endian) {
 		BYTE* dataPtr = (BYTE*)&data + size - 1;
-		for (__int64 page = (addr + size) / 0x1000; page >= 0; page--)
-			for (int offset = (addr + size % 0x1000); offset >= 0 && size > 0; offset--, size--, dataPtr--)
+		for (__int64 page = (addr + size - 1) / 0x1000; page >= 0; page--)
+			for (int offset = ((addr + size - 1) % 0x1000); offset >= 0 && size > 0; offset--, size--, dataPtr--)
 				writeByte(page, offset, *dataPtr);
 	}
 	else if (BDir == BDir_Big_Endian) {

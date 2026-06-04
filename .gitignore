@@ -2,5 +2,5 @@ imgui.ini
 imgui_log.txt
 Settings.bin
 test.dmp
-/Build/
+Build/
 .vs
