@@ -1,5 +1,6 @@
 #include "EmulatorManager.h"
 #include <thread>
+#include <chrono>
 
 void EmulatorManager::init() {
     isInit = true;
