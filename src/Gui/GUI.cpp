@@ -120,12 +120,12 @@ void GUI::controlWindow() {
 		
 	if (ImGui::Button((const char*)u8"Шаг"))
 		em.makeStepIn();
-	//if (ImGui::Button((const char*)u8"Шаг с обходом")) {
-	//	//em.makeStepDetour();
-	//}
-	//if (ImGui::Button((const char*)u8"Шаг с выходом")) {
-	//	//em.makeStepOut();
-	//}
+	if (ImGui::Button((const char*)u8"Шаг с обходом")) {
+		//em.makeStepDetour();
+	}
+	if (ImGui::Button((const char*)u8"Шаг с выходом")) {
+		//em.makeStepOut();
+	}
 	if (ImGui::Button((const char*)u8"Выполнить")) {
 		em.run();
 	}
