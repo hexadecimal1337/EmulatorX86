@@ -17,8 +17,8 @@ public:
 	void destroy();
 	void run();
 	void makeStepIn();
-	void makeStepDetour();
-	void makeStepOut();
+	//void makeStepDetour();
+	//void makeStepOut();
 	void stop();
 
 	const char* getStatusStr(StepStatus status);

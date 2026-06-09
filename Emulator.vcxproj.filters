@@ -60,6 +60,9 @@
     <ClCompile Include="src\Logic\SettingManager.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
+    <ClCompile Include="src\Extern\ImGui\TextEditor.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Gui\GraphicsManager.h">
@@ -114,6 +117,9 @@
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="src\Resources\ImGuiSettings.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Extern\ImGui\TextEditor.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

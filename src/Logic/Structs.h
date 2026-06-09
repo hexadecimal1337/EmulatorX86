@@ -6,7 +6,8 @@ enum StepStatus {
 	EM_BREAKPOINT = 1,
 	EM_INVALID_INSTRUCTION = -1,
 	EM_INVALID_OPERAND = -2,
-	EM_INVALID_ADDRESS = -3
+	EM_INVALID_ADDRESS = -3,
+	EM_INVALID_SYNTAX = -4
 };
 
 enum OperandType : BYTE {
@@ -60,11 +61,13 @@ enum Opcode : BYTE {
 	AND = 0x21,
 	XOR = 0x31,
 	CMP = 0x39,
+	PUSH = 0x50,
+	POP = 0x58,
 	JB = 0x72,
 	JNB = 0x73,
 	JE = 0x74,
 	JNE = 0x75,
-	JNA = 0x76,
+	JBE = 0x76,
 	JA = 0x77,
 	SUB = 0x81,
 	ADD = 0x83,

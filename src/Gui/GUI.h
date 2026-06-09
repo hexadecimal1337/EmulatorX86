@@ -3,7 +3,26 @@
 #include "GraphicsManager.h"
 #include "Logic/EmulatorManager.h"
 #include "Logic/SettingManager.h"
+#include "Extern/ImGui/TextEditor.h"
 #include <list>
+
+class Assembler {
+public:
+	Assembler();
+	void render(const char* title);
+	StepStatus compile();
+	bool saveFileAs();
+	bool saveFile(const wchar_t* filePath);
+	bool loadFileAs();
+	bool loadFile(const wchar_t* filePath);
+private:
+	TextEditor::LanguageDefinition getAsmLanguage();
+	std::string getErrorMsg(StepStatus error);
+
+	TextEditor textEditor;
+	InstructionManager& im = InstructionManager::getInstructionManager();
+	MemoryManager& mm = MemoryManager::getMemoryManager();
+};
 
 class ModalWindow {
 public:
@@ -44,6 +63,7 @@ private:
 	void controlWindow();
 	void drawFLAG(const char* flagName, int flagID);
 	void settingsWindow();
+	void assemblyWindow();
 	bool loadDmpFile();
 	bool saveDmpFile();
 
@@ -53,6 +73,7 @@ private:
 
 	ModalWindow modal;
 	MemoryWindows memoryWindows;
+	Assembler assembler;
 
 	MemoryManager& mm = MemoryManager::getMemoryManager();
 	EmulatorManager& em = EmulatorManager::getEmulatorManager();
