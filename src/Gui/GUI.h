@@ -9,7 +9,7 @@
 
 class ProgramConsoleWindow {
 public:
-	void render(bool* open);
+	void render(bool* open, const Settings& settings);
 
 private:
 	char inputBuffer[1024] = {};
@@ -18,17 +18,20 @@ private:
 class Assembler {
 public:
 	Assembler();
-	void render(const char* title);
+	void render(const char* title, const Settings& settings);
 	StepStatus compile();
 	bool saveFileAs();
 	bool saveFile(const wchar_t* filePath);
 	bool loadFileAs();
 	bool loadFile(const wchar_t* filePath);
+	void autoSaveIfNeeded(const Settings& settings);
 private:
 	TextEditor::LanguageDefinition getAsmLanguage();
 	std::string getErrorMsg(StepStatus error);
+	void applySettings(const Settings& settings);
 
 	TextEditor textEditor;
+	std::string lastAutoSaveText;
 	InstructionManager& im = InstructionManager::getInstructionManager();
 	MemoryManager& mm = MemoryManager::getMemoryManager();
 };
@@ -75,6 +78,10 @@ private:
 	void assemblyWindow();
 	bool loadDmpFile();
 	bool saveDmpFile();
+	void applyAppearanceSettings();
+	void drawAppearanceSettings();
+	void drawConsoleSettings();
+	void drawProjectSettings();
 
 	bool isOpen = true;
 	bool isSettingsOpen = false;

@@ -229,6 +229,10 @@ public:
 
 	inline void SetShowWhitespaces(bool aValue) { mShowWhitespaces = aValue; }
 	inline bool IsShowingWhitespaces() const { return mShowWhitespaces; }
+	inline void SetShowLineNumbers(bool aValue) { mShowLineNumbers = aValue; }
+	inline bool IsShowingLineNumbers() const { return mShowLineNumbers; }
+	inline void SetHighlightCurrentLine(bool aValue) { mHighlightCurrentLine = aValue; }
+	inline bool IsHighlightingCurrentLine() const { return mHighlightCurrentLine; }
 
 	void SetTabSize(int aValue);
 	inline int GetTabSize() const { return mTabSize; }
@@ -371,6 +375,8 @@ private:
 	bool mHandleMouseInputs;
 	bool mIgnoreImGuiChild;
 	bool mShowWhitespaces;
+	bool mShowLineNumbers;
+	bool mHighlightCurrentLine;
 
 	Palette mPaletteBase;
 	Palette mPalette;

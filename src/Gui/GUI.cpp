@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <algorithm>
 #include <sstream>
 #include "GUI.h"
 #include "Extern/ImGui/imgui_internal.h"
@@ -6,10 +7,103 @@
 #include "Logic/ProgramConsoleManager.h"
 #include "Resources/ImGuiSettings.h"
 #include <fstream>
+namespace {
+constexpr float DEFAULT_FONT_SIZE = 15.0f;
 
+float fontScale(float size, float baseSize = DEFAULT_FONT_SIZE) {
+	return (std::max)(0.6f, size / baseSize);
+}
+
+ImVec4 colorFromSetting(uint32_t color) {
+	return ImGui::ColorConvertU32ToFloat4((ImU32)color);
+}
+
+void colorSettingEdit(const char* label, uint32_t& color) {
+	ImVec4 value = colorFromSetting(color);
+	if (ImGui::ColorEdit4(label, (float*)&value, ImGuiColorEditFlags_NoInputs))
+		color = ImGui::ColorConvertFloat4ToU32(value);
+}
+
+void applyPurpleStyle() {
+	ImGui::StyleColorsDark();
+	ImGuiStyle& styles = ImGui::GetStyle();
+	auto& colors = styles.Colors;
+	colors[ImGuiCol_WindowBg] = ImVec4{ 0.1f, 0.1f, 0.13f, 1.0f };
+	colors[ImGuiCol_MenuBarBg] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_Border] = ImVec4{ 0.44f, 0.37f, 0.61f, 0.29f };
+	colors[ImGuiCol_BorderShadow] = ImVec4{ 0.0f, 0.0f, 0.0f, 0.24f };
+	colors[ImGuiCol_Text] = ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	colors[ImGuiCol_TextDisabled] = ImVec4{ 0.5f, 0.5f, 0.5f, 1.0f };
+	colors[ImGuiCol_Header] = ImVec4{ 0.13f, 0.13f, 0.17f, 1.0f };
+	colors[ImGuiCol_HeaderHovered] = ImVec4{ 0.19f, 0.2f, 0.25f, 1.0f };
+	colors[ImGuiCol_HeaderActive] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_Button] = ImVec4{ 0.13f, 0.13f, 0.17f, 1.0f };
+	colors[ImGuiCol_ButtonHovered] = ImVec4{ 0.19f, 0.2f, 0.25f, 1.0f };
+	colors[ImGuiCol_ButtonActive] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_CheckMark] = ImVec4{ 0.74f, 0.58f, 0.98f, 1.0f };
+	colors[ImGuiCol_PopupBg] = ImVec4{ 0.1f, 0.1f, 0.13f, 0.92f };
+	colors[ImGuiCol_SliderGrab] = ImVec4{ 0.44f, 0.37f, 0.61f, 0.54f };
+	colors[ImGuiCol_SliderGrabActive] = ImVec4{ 0.74f, 0.58f, 0.98f, 0.54f };
+	colors[ImGuiCol_FrameBg] = ImVec4{ 0.13f, 0.13f, 0.17f, 1.0f };
+	colors[ImGuiCol_FrameBgHovered] = ImVec4{ 0.19f, 0.2f, 0.25f, 1.0f };
+	colors[ImGuiCol_FrameBgActive] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_Tab] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_TabHovered] = ImVec4{ 0.24f, 0.24f, 0.32f, 1.0f };
+	colors[ImGuiCol_TabActive] = ImVec4{ 0.2f, 0.22f, 0.27f, 1.0f };
+	colors[ImGuiCol_TabUnfocused] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_TabUnfocusedActive] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_TitleBg] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_TitleBgActive] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_TitleBgCollapsed] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_ScrollbarBg] = ImVec4{ 0.1f, 0.1f, 0.13f, 1.0f };
+	colors[ImGuiCol_ScrollbarGrab] = ImVec4{ 0.16f, 0.16f, 0.21f, 1.0f };
+	colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{ 0.19f, 0.2f, 0.25f, 1.0f };
+	colors[ImGuiCol_ScrollbarGrabActive] = ImVec4{ 0.24f, 0.24f, 0.32f, 1.0f };
+	colors[ImGuiCol_Separator] = ImVec4{ 0.44f, 0.37f, 0.61f, 1.0f };
+	colors[ImGuiCol_SeparatorHovered] = ImVec4{ 0.74f, 0.58f, 0.98f, 1.0f };
+	colors[ImGuiCol_SeparatorActive] = ImVec4{ 0.84f, 0.58f, 1.0f, 1.0f };
+	colors[ImGuiCol_ResizeGrip] = ImVec4{ 0.44f, 0.37f, 0.61f, 0.29f };
+	colors[ImGuiCol_ResizeGripHovered] = ImVec4{ 0.74f, 0.58f, 0.98f, 0.29f };
+	colors[ImGuiCol_ResizeGripActive] = ImVec4{ 0.84f, 0.58f, 1.0f, 0.29f };
+	colors[ImGuiCol_DockingPreview] = ImVec4{ 0.44f, 0.37f, 0.61f, 1.0f };
+	styles.TabRounding = 8.0f;
+	styles.ScrollbarRounding = 9.0f;
+	styles.WindowRounding = 10.0f;
+	styles.GrabRounding = 12.0f;
+	styles.FrameRounding = 3.0f;
+	styles.PopupRounding = 10.0f;
+	styles.ChildRounding = 0.0f;
+	styles.WindowTitleAlign.x = 0.5f;
+	styles.SeparatorTextAlign.x = 0.5f;
+}
+void applyHighContrastStyle() {
+	ImGui::StyleColorsDark();
+	ImGuiStyle& style = ImGui::GetStyle();
+	auto& colors = style.Colors;
+	colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+	colors[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+	colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+	colors[ImGuiCol_TextDisabled] = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+	colors[ImGuiCol_Border] = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+	colors[ImGuiCol_Button] = ImVec4(0.02f, 0.02f, 0.02f, 1.0f);
+	colors[ImGuiCol_ButtonHovered] = ImVec4(0.12f, 0.12f, 0.12f, 1.0f);
+	colors[ImGuiCol_ButtonActive] = ImVec4(0.25f, 0.25f, 0.0f, 1.0f);
+	colors[ImGuiCol_Header] = ImVec4(0.12f, 0.12f, 0.0f, 1.0f);
+	colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.25f, 0.0f, 1.0f);
+	colors[ImGuiCol_HeaderActive] = ImVec4(0.4f, 0.4f, 0.0f, 1.0f);
+	colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+	colors[ImGuiCol_FrameBg] = ImVec4(0.03f, 0.03f, 0.03f, 1.0f);
+	colors[ImGuiCol_FrameBgHovered] = ImVec4(0.14f, 0.14f, 0.14f, 1.0f);
+	colors[ImGuiCol_FrameBgActive] = ImVec4(0.24f, 0.24f, 0.0f, 1.0f);
+	colors[ImGuiCol_Tab] = ImVec4(0.02f, 0.02f, 0.02f, 1.0f);
+	colors[ImGuiCol_TabActive] = ImVec4(0.18f, 0.18f, 0.0f, 1.0f);
+	colors[ImGuiCol_TabHovered] = ImVec4(0.3f, 0.3f, 0.0f, 1.0f);
+}
+}
 void GUI::loadSettings() {
 	sm.load();
 	memoryWindows.setSize(sm.set.memEditorsNum);
+	applyAppearanceSettings();
 	const char* test = ImGui::SaveIniSettingsToMemory();
 	std::ifstream fl("imgui.ini");
 	if (!fl.is_open())
@@ -22,11 +116,13 @@ void GUI::resetSettings() {
 	sm.resetSettings();
 	ImGui::LoadIniSettingsFromMemory((const char*)Resource::ImGuiDefaultSettings, sizeof(Resource::ImGuiDefaultSettings));
 	memoryWindows.setSize(sm.set.memEditorsNum);
+	applyAppearanceSettings();
 }
 
 void GUI::render() {
 	GraphicsManager& gm = GraphicsManager::getGraphicsManager();
 	if (isOpen) {
+		applyAppearanceSettings();
 		mainWindow();
 		if(sm.set.isProcessor)
 			controlWindow();
@@ -34,6 +130,7 @@ void GUI::render() {
 		modal.renderModal();
 		memoryWindows.renderEditors();
 		assemblyWindow();
+		assembler.autoSaveIfNeeded(sm.set);
 		StepStatus status = em.getLastStatus();
 		if(status < 0) {
 			em.resetStatus();
@@ -101,7 +198,7 @@ void GUI::mainWindow() {
 	//	ImGui::End();
 	//}
 	if (sm.set.isConsole) {
-		programConsole.render(&sm.set.isConsole);
+		programConsole.render(&sm.set.isConsole, sm.set);
 	}
 }
 
@@ -178,17 +275,98 @@ void GUI::drawFLAG(const char* flagName, int flagID) {
 	ImGui::PopID();
 }
 
+void GUI::applyAppearanceSettings() {
+	sm.set.uiFontSize = std::clamp(sm.set.uiFontSize, 12.0f, 24.0f);
+	sm.set.editorFontSize = std::clamp(sm.set.editorFontSize, 12.0f, 28.0f);
+	sm.set.consoleFontSize = std::clamp(sm.set.consoleFontSize, 12.0f, 28.0f);
+	sm.set.editorTabSize = std::clamp(sm.set.editorTabSize, 1, 8);
+	ImGui::GetIO().FontGlobalScale = fontScale(sm.set.uiFontSize);
+	switch (sm.set.appTheme) {
+	case APP_THEME_LIGHT:
+		ImGui::StyleColorsLight();
+		break;
+	case APP_THEME_BLUE:
+		ImGui::StyleColorsClassic();
+		break;
+	case APP_THEME_HIGH_CONTRAST:
+		applyHighContrastStyle();
+		break;
+	case APP_THEME_DARK:
+		ImGui::StyleColorsDark();
+		break;
+	case APP_THEME_PURPLE:
+	default:
+		applyPurpleStyle();
+		break;
+	}
+	if (sm.set.appTheme != APP_THEME_PURPLE) {
+		ImGuiStyle& style = ImGui::GetStyle();
+		style.WindowRounding = 7.0f;
+		style.ChildRounding = 4.0f;
+		style.FrameRounding = 3.0f;
+		style.PopupRounding = 4.0f;
+		style.GrabRounding = 3.0f;
+		style.TabRounding = 4.0f;
+		style.WindowTitleAlign.x = 0.5f;
+		style.SeparatorTextAlign.x = 0.5f;
+	}
+}
 void GUI::settingsWindow() {
-	ImGui::SetNextWindowSize({ 400,500 });
+	ImGui::SetNextWindowSize({ 520,640 }, ImGuiCond_FirstUseEver);
 	if (isSettingsOpen) {
-		ImGui::Begin((const char*)u8"Настройки",&isSettingsOpen, ImGuiWindowFlags_NoResize);
-		if (ImGui::Button((const char*)u8"Сбросить настройки")) {
+		ImGui::Begin((const char*)u8"Настройки", &isSettingsOpen);
+		if (ImGui::Button((const char*)u8"Сбросить настройки"))
 			resetSettings();
+		ImGui::Separator();
+		if (ImGui::BeginTabBar("SettingsTabs")) {
+			if (ImGui::BeginTabItem((const char*)u8"Внешний вид")) {
+				drawAppearanceSettings();
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem((const char*)u8"Консоль")) {
+				drawConsoleSettings();
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem((const char*)u8"Проект")) {
+				drawProjectSettings();
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
 		}
 		ImGui::End();
 	}
 }
 
+void GUI::drawAppearanceSettings() {
+	const char* themes[] = { (const char*)u8"Фиолетовая", (const char*)u8"Светлая", (const char*)u8"IDE Blue", (const char*)u8"Высокий контраст", (const char*)u8"Тёмная" };
+	ImGui::Combo((const char*)u8"Тема интерфейса", &sm.set.appTheme, themes, IM_ARRAYSIZE(themes));
+	ImGui::SliderFloat((const char*)u8"Шрифт интерфейса", &sm.set.uiFontSize, 12.0f, 24.0f, "%.0f px");
+	ImGui::SliderFloat((const char*)u8"Шрифт редактора", &sm.set.editorFontSize, 12.0f, 28.0f, "%.0f px");
+	ImGui::SeparatorText((const char*)u8"Редактор");
+	ImGui::Checkbox((const char*)u8"Номера строк", &sm.set.editorShowLineNumbers);
+	ImGui::Checkbox((const char*)u8"Подсветка текущей строки", &sm.set.editorHighlightCurrentLine);
+	ImGui::Checkbox((const char*)u8"Показывать пробелы и табы", &sm.set.editorShowWhitespaces);
+	ImGui::Checkbox((const char*)u8"Автоотступ", &sm.set.editorAutoIndent);
+	ImGui::SliderInt((const char*)u8"Размер табуляции", &sm.set.editorTabSize, 1, 8);
+	ImGui::SeparatorText((const char*)u8"Палитра ASM");
+	colorSettingEdit((const char*)u8"Команды", sm.set.asmInstructionColor);
+	colorSettingEdit((const char*)u8"Регистры", sm.set.asmRegisterColor);
+	colorSettingEdit((const char*)u8"Числа", sm.set.asmNumberColor);
+	colorSettingEdit((const char*)u8"Строки", sm.set.asmStringColor);
+	colorSettingEdit((const char*)u8"Комментарии", sm.set.asmCommentColor);
+	colorSettingEdit((const char*)u8"Метки", sm.set.asmLabelColor);
+	colorSettingEdit((const char*)u8"Ошибки компиляции", sm.set.asmErrorColor);
+}
+
+void GUI::drawConsoleSettings() {
+	ImGui::SliderFloat((const char*)u8"Шрифт консоли", &sm.set.consoleFontSize, 12.0f, 28.0f, "%.0f px");
+	colorSettingEdit((const char*)u8"Цвет текста", sm.set.consoleTextColor);
+	colorSettingEdit((const char*)u8"Цвет фона", sm.set.consoleBgColor);
+}
+
+void GUI::drawProjectSettings() {
+	ImGui::Checkbox((const char*)u8"Автосохранение кода в Autosave.asm", &sm.set.projectAutosaveCode);
+}
 void GUI::assemblyWindow() {
 	if (sm.set.isAssembler) {
 		ImGui::Begin((const char*)u8"Ассемблер", &sm.set.isAssembler,ImGuiWindowFlags_MenuBar);
@@ -213,7 +391,7 @@ void GUI::assemblyWindow() {
 			}
 			ImGui::EndMenuBar();
 		}
-		assembler.render("TextEditor");
+		assembler.render("TextEditor", sm.set);
 		ImGui::End();
 	}
 }
@@ -320,21 +498,25 @@ void MemoryWindows::setSize(int newSize) {
 		editors.push_back(new MemoryEditor());
 }
 
-void ProgramConsoleWindow::render(bool* open) {
+void ProgramConsoleWindow::render(bool* open, const Settings& settings) {
     ProgramConsoleManager& console = ProgramConsoleManager::getProgramConsoleManager();
     ImGui::Begin((const char*)u8"Консоль программы", open);
+    ImGui::SetWindowFontScale(fontScale(settings.consoleFontSize, settings.uiFontSize));
 
     if (ImGui::Button((const char*)u8"Очистить"))
         console.clear();
 
     ImGui::Separator();
     float inputHeight = ImGui::GetFrameHeightWithSpacing();
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colorFromSetting(settings.consoleBgColor));
+    ImGui::PushStyleColor(ImGuiCol_Text, colorFromSetting(settings.consoleTextColor));
     ImGui::BeginChild("ProgramConsoleOutput", ImVec2(0, -inputHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
     std::string output = console.getOutput();
     ImGui::TextUnformatted(output.c_str());
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
         ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
+    ImGui::PopStyleColor(2);
 
     bool isWaitingInput = console.isInputWaiting();
     ImGui::PushItemWidth(-1);
@@ -348,6 +530,7 @@ void ProgramConsoleWindow::render(bool* open) {
     }
     ImGui::PopItemWidth();
 
+    ImGui::SetWindowFontScale(1.0f);
     ImGui::End();
 }
 Assembler::Assembler() {
@@ -356,10 +539,49 @@ Assembler::Assembler() {
 	textEditor.SetShowWhitespaces(false);
 }
 
-void Assembler::render(const char* title) {
+void Assembler::render(const char* title, const Settings& settings) {
+	applySettings(settings);
+	ImGui::SetWindowFontScale(fontScale(settings.editorFontSize, settings.uiFontSize));
 	textEditor.Render(title);
+	ImGui::SetWindowFontScale(1.0f);
 }
 
+void Assembler::applySettings(const Settings& settings) {
+	TextEditor::Palette palette = settings.appTheme == APP_THEME_LIGHT ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
+	if (settings.appTheme == APP_THEME_BLUE)
+		palette = TextEditor::GetRetroBluePalette();
+	palette[(int)TextEditor::PaletteIndex::KnownIdentifier] = settings.asmInstructionColor;
+	palette[(int)TextEditor::PaletteIndex::Keyword] = settings.asmRegisterColor;
+	palette[(int)TextEditor::PaletteIndex::Number] = settings.asmNumberColor;
+	palette[(int)TextEditor::PaletteIndex::String] = settings.asmStringColor;
+	palette[(int)TextEditor::PaletteIndex::Comment] = settings.asmCommentColor;
+	palette[(int)TextEditor::PaletteIndex::Identifier] = settings.asmLabelColor;
+	palette[(int)TextEditor::PaletteIndex::ErrorMarker] = settings.asmErrorColor;
+	textEditor.SetPalette(palette);
+	textEditor.SetShowLineNumbers(settings.editorShowLineNumbers);
+	textEditor.SetHighlightCurrentLine(settings.editorHighlightCurrentLine);
+	textEditor.SetShowWhitespaces(settings.editorShowWhitespaces);
+	textEditor.SetTabSize(settings.editorTabSize);
+	TextEditor::LanguageDefinition lang = textEditor.GetLanguageDefinition();
+	lang.mAutoIndentation = settings.editorAutoIndent;
+	textEditor.SetLanguageDefinition(lang);
+}
+
+void Assembler::autoSaveIfNeeded(const Settings& settings) {
+	if (!settings.projectAutosaveCode) {
+		lastAutoSaveText.clear();
+		return;
+	}
+	std::string text = textEditor.GetText();
+	if (text == lastAutoSaveText)
+		return;
+	std::fstream file("Autosave.asm", std::ios::out | std::ios::binary);
+	if (!file.is_open())
+		return;
+	file.write(text.c_str(), text.size());
+	file.close();
+	lastAutoSaveText = text;
+}
 StepStatus Assembler::compile() {
 	std::lock_guard<std::recursive_mutex> cpuLock(mm.getStateMutex());
 	std::vector<std::string> lines = textEditor.GetTextLines();
