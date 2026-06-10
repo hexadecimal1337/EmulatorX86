@@ -5,6 +5,8 @@ VisualStudioVersion = 17.8.34525.116
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Emulator", "Emulator.vcxproj", "{AFCE83DC-5D1A-4828-A9BA-C70426933D9E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EmulatorTests", "EmulatorTests.vcxproj", "{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{AFCE83DC-5D1A-4828-A9BA-C70426933D9E}.Release|x64.Build.0 = Release|x64
 		{AFCE83DC-5D1A-4828-A9BA-C70426933D9E}.Release|x86.ActiveCfg = Release|Win32
 		{AFCE83DC-5D1A-4828-A9BA-C70426933D9E}.Release|x86.Build.0 = Release|Win32
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Debug|x64.ActiveCfg = Debug|x64
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Debug|x64.Build.0 = Debug|x64
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Debug|x86.ActiveCfg = Debug|Win32
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Debug|x86.Build.0 = Debug|Win32
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Release|x64.ActiveCfg = Release|x64
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Release|x64.Build.0 = Release|x64
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Release|x86.ActiveCfg = Release|Win32
+		{4F8B27F0-83DF-4E77-9D67-8BA035F0F4D5}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

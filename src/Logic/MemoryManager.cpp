@@ -3,6 +3,7 @@
 #include <fstream>
 
 void MemoryManager::init() {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	if (memPages)
 		return;
 	memPages = new BYTE* [0xF'FFFF];
@@ -18,6 +19,7 @@ void MemoryManager::init() {
 }
 
 void MemoryManager::destroy() {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	if (memPages == nullptr)
 		return;
 	for (int i = 0; i < 0xF'FFFF; ++i)
@@ -27,6 +29,7 @@ void MemoryManager::destroy() {
 }
 
 void MemoryManager::optimize() {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	for (int i = 0; i < 0xF'FFFF; ++i) {
 		if (memPages[i]) {
 			bool isEmpty = true;
@@ -41,6 +44,7 @@ void MemoryManager::optimize() {
 }
 
 bool MemoryManager::saveToFile(const wchar_t* filePath) {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	std::list<PageInfo> pagesInfo;
 	std::fstream file(filePath,std::ios::out);
 	if (!file.is_open())
@@ -69,6 +73,7 @@ bool MemoryManager::saveToFile(const wchar_t* filePath) {
 }
 
 bool MemoryManager::loadFromFile(const wchar_t* filePath) {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	std::fstream file(filePath, std::ios::in);
 	if (!file.is_open())
 		return false;
@@ -91,14 +96,21 @@ bool MemoryManager::loadFromFile(const wchar_t* filePath) {
 	}
 	delete[] pagesInfo;
 	file.close();
+	return true;
 }
 
 void MemoryManager::reset() {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	destroy();
 	init();
 }
 
+std::recursive_mutex& MemoryManager::getStateMutex() {
+	return stateMutex;
+}
+
 int MemoryManager::getEFLAGS() {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	int EFLAGS = 0;
 	for (int i = 0; i < 32; ++i) {
 		EFLAGS |= ctx.EFLAGS[i] << i;

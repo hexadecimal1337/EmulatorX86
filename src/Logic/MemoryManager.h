@@ -1,5 +1,6 @@
 #pragma once
 #include "Structs.h"
+#include <mutex>
 
 class MemoryManager {
 public:
@@ -14,6 +15,7 @@ public:
 	bool saveToFile(const wchar_t* filePath);
 	bool loadFromFile(const wchar_t* filePath);
 	void reset();
+	std::recursive_mutex& getStateMutex();
 
 	template <typename T> StepStatus readMem(DWORD addr, T& data, ByteDirection BDir = BDir_Little_Endian);
 	template <typename T> StepStatus writeMem(DWORD addr, T data, ByteDirection BDir = BDir_Little_Endian);
@@ -29,6 +31,7 @@ private:
 
 
 	BYTE** memPages = nullptr;
+	std::recursive_mutex stateMutex;
 };
 
 struct PageInfo {
@@ -38,6 +41,7 @@ struct PageInfo {
 
 template<typename T>
 inline StepStatus MemoryManager::readMem(DWORD addr, T& data, ByteDirection BDir) {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	int size = sizeof(T);
 
 	// Increase read speed if 1 byte
@@ -51,7 +55,7 @@ inline StepStatus MemoryManager::readMem(DWORD addr, T& data, ByteDirection BDir
 
 	if (BDir == BDir_Little_Endian) {
 		BYTE* dataPtr = (BYTE*)&data + size - 1;
-		for (__int64 page = (addr + size) / 0x1000; page >= 0; page--) {
+		for (__int64 page = (addr + size - 1) / 0x1000; page >= 0; page--) {
 			for (int offset = ((addr + size - 1) % 0x1000); offset >= 0 && size > 0; offset--, size--, dataPtr--) {
 				*dataPtr = readByte(page, offset);
 			}
@@ -71,6 +75,7 @@ inline StepStatus MemoryManager::readMem(DWORD addr, T& data, ByteDirection BDir
 
 template<typename T>
 inline StepStatus MemoryManager::writeMem(DWORD addr, T data, ByteDirection BDir) {
+	std::lock_guard<std::recursive_mutex> lock(stateMutex);
 	int size = sizeof(T);
 
 	// Increase write speed if 1 byte

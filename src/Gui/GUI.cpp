@@ -3,6 +3,7 @@
 #include "GUI.h"
 #include "Extern/ImGui/imgui_internal.h"
 #include "Extern/ImGui/imgui_memory_editor.h"
+#include "Logic/ProgramConsoleManager.h"
 #include "Resources/ImGuiSettings.h"
 #include <fstream>
 
@@ -100,13 +101,13 @@ void GUI::mainWindow() {
 	//	ImGui::End();
 	//}
 	if (sm.set.isConsole) {
-		ImGui::Begin((const char*)u8"Консоль программы", &sm.set.isConsole);
-		ImGui::End();
+		programConsole.render(&sm.set.isConsole);
 	}
 }
 
 void GUI::controlWindow() {
 	ImGui::Begin((const char*)u8"Процессор", &sm.set.isProcessor);
+	std::lock_guard<std::recursive_mutex> cpuLock(mm.getStateMutex());
 
 	static int test = 0;
 	int EFLAGS = mm.getEFLAGS();
@@ -158,8 +159,9 @@ void GUI::controlWindow() {
 	ImGui::SeparatorText((const char*)u8"Частота и счётчик тактов");
 	ImGui::PushItemWidth(70);
 	ImGui::DragInt((const char*)u8"Гц    Частота процессора", &frequency, 0, 0, 0,"%d");
-	ImGui::DragInt((const char*)u8"        Счётчик тактов", (int*)&mm.ctx.counter, 0, 0, 0, "%d");
-	mm.ctx.counter = mm.ctx.counter % 1'000'000;
+	unsigned long long counter = mm.ctx.counter;
+	ImGui::DragScalar((const char*)u8"        Счётчик тактов", ImGuiDataType_U64, &counter, 0, nullptr, nullptr, "%llu");
+	mm.ctx.counter = counter;
 	if (frequency > 0 && frequency <= 1'000'000)
 		mm.ctx.frequency = frequency;
 	ImGui::End();
@@ -293,6 +295,7 @@ bool MemoryWindows::openNewEditor() {
 		editors.push_back(new MemoryEditor());
 	else
 		return false;
+	return true;
 }
 
 void MemoryWindows::renderEditors() {
@@ -317,9 +320,40 @@ void MemoryWindows::setSize(int newSize) {
 		editors.push_back(new MemoryEditor());
 }
 
+void ProgramConsoleWindow::render(bool* open) {
+    ProgramConsoleManager& console = ProgramConsoleManager::getProgramConsoleManager();
+    ImGui::Begin((const char*)u8"Консоль программы", open);
+
+    if (ImGui::Button((const char*)u8"Очистить"))
+        console.clear();
+
+    ImGui::Separator();
+    float inputHeight = ImGui::GetFrameHeightWithSpacing();
+    ImGui::BeginChild("ProgramConsoleOutput", ImVec2(0, -inputHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+    std::string output = console.getOutput();
+    ImGui::TextUnformatted(output.c_str());
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+        ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+
+    bool isWaitingInput = console.isInputWaiting();
+    ImGui::PushItemWidth(-1);
+    ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue;
+    if (!isWaitingInput)
+        inputFlags |= ImGuiInputTextFlags_ReadOnly;
+    if (ImGui::InputText("##ProgramConsoleInput", inputBuffer, sizeof(inputBuffer), inputFlags)) {
+        if (isWaitingInput)
+            console.pushInput(inputBuffer);
+        inputBuffer[0] = '\0';
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::End();
+}
 Assembler::Assembler() {
 	auto lang = getAsmLanguage();
 	textEditor.SetLanguageDefinition(lang);
+	textEditor.SetShowWhitespaces(false);
 }
 
 void Assembler::render(const char* title) {
@@ -327,6 +361,7 @@ void Assembler::render(const char* title) {
 }
 
 StepStatus Assembler::compile() {
+	std::lock_guard<std::recursive_mutex> cpuLock(mm.getStateMutex());
 	std::vector<std::string> lines = textEditor.GetTextLines();
 	std::vector<BYTE> code;
 	std::vector<std::pair<int, StepStatus>> errors;
@@ -405,21 +440,29 @@ bool Assembler::loadFile(const wchar_t* filePath) {
 }
 
 TextEditor::LanguageDefinition Assembler::getAsmLanguage() {
-	TextEditor::LanguageDefinition lang =  textEditor.GetLanguageDefinition();
+	TextEditor::LanguageDefinition lang = textEditor.GetLanguageDefinition();
+	lang.mName = "ASM";
+	lang.mSingleLineComment = "//";
+	lang.mCaseSensitive = true;
+
+	using PaletteIndex = TextEditor::PaletteIndex;
+	lang.mTokenRegexStrings.insert(lang.mTokenRegexStrings.begin(), std::make_pair<std::string, PaletteIndex>("[0-9a-fA-F]+[hH]", PaletteIndex::Number));
+
 	static const char* const identifiers[] = {
-			"or", "and", "xor", "cmp", "jmp", "jb", "jnb", "je", "jne", "jna", "jbe", "sub", "add", "test", "mov", "int3", "push", "pop"
+		"nop", "or", "and", "xor", "cmp", "jmp", "jo", "jno", "jb", "jnb", "je", "jne", "jna", "jbe", "ja", "js", "jns", "jl", "jge", "jle", "jg", "sub", "add", "inc", "dec", "not", "neg", "shl", "shr", "sar", "mul", "imul", "div", "idiv", "lea", "xchg", "call", "ret", "clc", "stc", "test", "mov", "int3", "push", "pop", "syscall", "db", "dd", "offset"
 	};
 	for (auto& k : identifiers) {
 		TextEditor::Identifier id;
 		id.mDeclaration = "Instructions";
 		lang.mIdentifiers.insert(std::make_pair(std::string(k), id));
 	}
-	static const char* keywords[] = {"eax","ebx", "ecx", "edx", "ebp", "esp", "esi", "edi", "eip"};
+
+	lang.mKeywords.clear();
+	static const char* const keywords[] = { "eax", "ebx", "ecx", "edx", "ebp", "esp", "esi", "edi", "eip" };
 	for (auto keyword : keywords)
 		lang.mKeywords.insert(std::string(keyword));
 	return lang;
 }
-
 std::string Assembler::getErrorMsg(StepStatus error) {
 	std::string result;
 	switch (error) {

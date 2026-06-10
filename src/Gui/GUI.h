@@ -5,6 +5,15 @@
 #include "Logic/SettingManager.h"
 #include "Extern/ImGui/TextEditor.h"
 #include <list>
+#include <string>
+
+class ProgramConsoleWindow {
+public:
+	void render(bool* open);
+
+private:
+	char inputBuffer[1024] = {};
+};
 
 class Assembler {
 public:
@@ -73,6 +82,7 @@ private:
 
 	ModalWindow modal;
 	MemoryWindows memoryWindows;
+	ProgramConsoleWindow programConsole;
 	Assembler assembler;
 
 	MemoryManager& mm = MemoryManager::getMemoryManager();
