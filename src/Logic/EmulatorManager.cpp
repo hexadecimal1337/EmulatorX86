@@ -47,6 +47,9 @@ const char* EmulatorManager::getStatusStr(StepStatus status) {
     case EM_INVALID_ADDRESS:
         result = (const char*)u8"Ошибка доступа\n\nПопытка чтения/записи/выполнения в недопустимой памяти\nПроверьте EIP/операнды/инструкцию";
         break;
+    case EM_DIVISION_BY_ZERO:
+        result = (const char*)u8"Деление на ноль\n\nДелитель равен 0\nПроверьте операнд инструкции div/idiv";
+        break;
     }
     return result;
 }
@@ -110,7 +113,7 @@ void EmulatorManager::workFunction() {
                         status = im.processInstruction(instData);
                     }
                     em.lastStatus.store(status);
-                    if (em.stepFlag.load() || status == EM_BREAKPOINT) {
+                    if (em.stepFlag.load() || status != EM_OK) {
                         em.isNeedStop.store(true);
                         em.stepFlag.store(false);
                     }

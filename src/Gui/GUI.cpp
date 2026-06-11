@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <sstream>
 #include "GUI.h"
@@ -7,8 +8,11 @@
 #include "Logic/ProgramConsoleManager.h"
 #include "Resources/ImGuiSettings.h"
 #include <fstream>
+
+#pragma comment(lib, "shell32.lib")
 namespace {
 constexpr float DEFAULT_FONT_SIZE = 15.0f;
+constexpr size_t MEMORY_EDITOR_VISIBLE_SIZE = 0x8000'0000ull;
 
 float fontScale(float size, float baseSize = DEFAULT_FONT_SIZE) {
 	return (std::max)(0.6f, size / baseSize);
@@ -22,6 +26,20 @@ void colorSettingEdit(const char* label, uint32_t& color) {
 	ImVec4 value = colorFromSetting(color);
 	if (ImGui::ColorEdit4(label, (float*)&value, ImGuiColorEditFlags_NoInputs))
 		color = ImGui::ColorConvertFloat4ToU32(value);
+}
+bool openDocsPdf(const wchar_t* fileName) {
+	const wchar_t* prefixes[] = { L"docs\\", L"..\\..\\..\\docs\\" };
+	for (const wchar_t* prefix : prefixes) {
+		std::wstring candidate = std::wstring(prefix) + fileName;
+		wchar_t fullPath[MAX_PATH] = {};
+		if (!GetFullPathNameW(candidate.c_str(), MAX_PATH, fullPath, nullptr))
+			continue;
+		DWORD attributes = GetFileAttributesW(fullPath);
+		if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY))
+			continue;
+		return (INT_PTR)ShellExecuteW(nullptr, L"open", fullPath, nullptr, nullptr, SW_SHOWNORMAL) > 32;
+	}
+	return false;
 }
 
 void applyPurpleStyle() {
@@ -189,7 +207,17 @@ void GUI::mainWindow() {
 		}
 		if (ImGui::MenuItem((const char*)u8"Настройки"))
 			isSettingsOpen = true;
-		ImGui::MenuItem((const char*)u8"Справка");
+		if (ImGui::BeginMenu((const char*)u8"Справка")) {
+			if (ImGui::MenuItem((const char*)u8"Руководство пользователя")) {
+				if (!openDocsPdf(L"Руководство пользователя.pdf"))
+					modal.openModal((const char*)u8"Ошибка справки", (const char*)u8"Не удалось открыть docs/Руководство пользователя.pdf");
+			}
+			if (ImGui::MenuItem((const char*)u8"Лабораторные работы")) {
+				if (!openDocsPdf(L"Лабораторные работы.pdf"))
+					modal.openModal((const char*)u8"Ошибка справки", (const char*)u8"Не удалось открыть docs/Лабораторные работы.pdf");
+			}
+			ImGui::EndMenu();
+		}
 		ImGui::EndMenuBar();
 	}
 	ImGui::End();
@@ -218,12 +246,6 @@ void GUI::controlWindow() {
 		
 	if (ImGui::Button((const char*)u8"Шаг"))
 		em.makeStepIn();
-	if (ImGui::Button((const char*)u8"Шаг с обходом")) {
-		//em.makeStepDetour();
-	}
-	if (ImGui::Button((const char*)u8"Шаг с выходом")) {
-		//em.makeStepOut();
-	}
 	if (ImGui::Button((const char*)u8"Выполнить")) {
 		em.run();
 	}
@@ -257,6 +279,7 @@ void GUI::controlWindow() {
 	ImGui::PushItemWidth(70);
 	ImGui::DragInt((const char*)u8"Гц    Частота процессора", &frequency, 0, 0, 0,"%d");
 	unsigned long long counter = mm.ctx.counter;
+	ImGui::PushItemWidth(100);
 	ImGui::DragScalar((const char*)u8"        Счётчик тактов", ImGuiDataType_U64, &counter, 0, nullptr, nullptr, "%llu");
 	mm.ctx.counter = counter;
 	if (frequency > 0 && frequency <= 1'000'000)
@@ -447,16 +470,28 @@ void ModalWindow::renderModal() {
 		ImGui::OpenPopup(header.c_str());
 		isModalPopped = false;
 	}
-	static ImVec2 screenCenter = { (float)GetSystemMetrics(SM_CXFULLSCREEN) / 2 - 280, (float)GetSystemMetrics(SM_CYFULLSCREEN) / 2 - 225 };
-	ImGui::SetNextWindowPos(screenCenter);
-	ImGui::SetNextWindowSize({ 280,225 });
+
+	constexpr float modalWidth = 430.0f;
+	constexpr float minModalHeight = 180.0f;
+	constexpr float maxModalHeight = 340.0f;
+	ImGuiStyle& style = ImGui::GetStyle();
+	float textWidth = modalWidth - style.WindowPadding.x * 2.0f;
+	float textHeight = ImGui::CalcTextSize(text.c_str(), nullptr, false, textWidth).y;
+	float modalHeight = (std::min)(maxModalHeight, (std::max)(minModalHeight, textHeight + 95.0f));
+
+	ImVec2 screenCenter = { (float)GetSystemMetrics(SM_CXFULLSCREEN) * 0.5f - modalWidth * 0.5f, (float)GetSystemMetrics(SM_CYFULLSCREEN) * 0.5f - modalHeight * 0.5f };
+	ImGui::SetNextWindowPos(screenCenter, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2(modalWidth, modalHeight), ImGuiCond_Always);
 	if (ImGui::BeginPopupModal(header.c_str(), &open, ImGuiWindowFlags_NoResize)) {
-		ImVec2 windowSize = ImGui::GetWindowSize();
-		ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
-		ImGui::SetCursorPos({ (windowSize.x - textSize.x) * 0.5f ,(windowSize.y - textSize.y) * 0.5f - 10 });
-		ImGui::Text(text.c_str());
-		ImGui::SetCursorPos({ 90, 195 });
-		if (ImGui::Button((const char*)u8"Продолжить"))
+		ImGui::Spacing();
+		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + textWidth);
+		ImGui::TextUnformatted(text.c_str());
+		ImGui::PopTextWrapPos();
+
+		const char* buttonText = (const char*)u8"Продолжить";
+		float buttonWidth = ImGui::CalcTextSize(buttonText).x + style.FramePadding.x * 2.0f;
+		ImGui::SetCursorPos(ImVec2((ImGui::GetWindowSize().x - buttonWidth) * 0.5f, ImGui::GetWindowSize().y - style.WindowPadding.y - ImGui::GetFrameHeight()));
+		if (ImGui::Button(buttonText))
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
@@ -484,7 +519,7 @@ void MemoryWindows::renderEditors() {
 			label[30] = i + 1 + 0x30;
 		MemoryEditor* editor = (MemoryEditor*)*it;
 		if (editor->Open) {
-			editor->DrawWindow((const char*)label, 0, 0x8000'0000);
+			editor->DrawWindow((const char*)label, 0, MEMORY_EDITOR_VISIBLE_SIZE);
 			++it;
 		}
 		else
@@ -589,8 +624,13 @@ StepStatus Assembler::compile() {
 	std::vector<std::pair<int, StepStatus>> errors;
 	StepStatus result = im.parseCode(lines, code, errors);
 	if (result == EM_OK) {
-		for (int i = 0; i < code.size(); ++i)
-			mm.writeMem(mm.ctx.EIP + i, code[i]);
+		for (int i = 0; i < code.size() && result == EM_OK; ++i) {
+			unsigned long long addr = (unsigned long long)mm.ctx.EIP + i;
+			if (addr > 0xFFFF'FFFFull)
+				result = EM_INVALID_ADDRESS;
+			else
+				result = mm.writeMem((DWORD)addr, code[i]);
+		}
 	}
 	TextEditor::ErrorMarkers markers;
 	for (const auto& error : errors)
@@ -664,7 +704,7 @@ bool Assembler::loadFile(const wchar_t* filePath) {
 TextEditor::LanguageDefinition Assembler::getAsmLanguage() {
 	TextEditor::LanguageDefinition lang = textEditor.GetLanguageDefinition();
 	lang.mName = "ASM";
-	lang.mSingleLineComment = "//";
+	lang.mSingleLineComment = ";";
 	lang.mCaseSensitive = true;
 
 	using PaletteIndex = TextEditor::PaletteIndex;

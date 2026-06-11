@@ -60,6 +60,7 @@
 
 #include <stdio.h>      // sprintf, scanf
 #include <stdint.h>     // uint8_t, etc.
+#include <algorithm>
 
 #if defined(_MSC_VER) || defined(_UCRT)
 #define _PRISizeT   "I"
@@ -79,13 +80,17 @@
 ImU8 ReadFunc(const ImU8* mem, size_t off, void* user_data) {
     static MemoryManager& mm = MemoryManager::getMemoryManager();
     ImU8 result = 0;
-    mm.readMem(off, result, BDir_Little_Endian);
+    const size_t addr = (size_t)mem + off;
+    if (addr <= 0xFFFF'FFFFull)
+        mm.readMem((DWORD)addr, result, BDir_Little_Endian);
     return result;
 }
 
 void WriteFunc(ImU8* mem, size_t off, ImU8 d, void* user_data) {
     static MemoryManager& mm = MemoryManager::getMemoryManager();
-    mm.writeMem(off, d, BDir_Little_Endian);
+    const size_t addr = (size_t)mem + off;
+    if (addr <= 0xFFFF'FFFFull)
+        mm.writeMem((DWORD)addr, d, BDir_Little_Endian);
 }
 
 struct MemoryEditor
@@ -132,6 +137,9 @@ struct MemoryEditor
     char            DataInputBuf[32];
     char            AddrInputBuf[32];
     size_t          GotoAddr;
+    size_t          ViewBaseAddr;
+    size_t          AddressSpaceBase;
+    size_t          AddressSpaceSize;
     size_t          HighlightMin, HighlightMax;
     int             PreviewEndianness;
     ImGuiDataType   PreviewDataType;
@@ -165,6 +173,9 @@ struct MemoryEditor
         memset(DataInputBuf, 0, sizeof(DataInputBuf));
         memset(AddrInputBuf, 0, sizeof(AddrInputBuf));
         GotoAddr = (size_t)-1;
+        ViewBaseAddr = 0;
+        AddressSpaceBase = 0;
+        AddressSpaceSize = 0;
         MouseHovered = false;
         MouseHoveredAddr = 0;
         HighlightMin = HighlightMax = (size_t)-1;
@@ -222,18 +233,29 @@ struct MemoryEditor
     // Standalone Memory Editor window
     void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000)
     {
+        constexpr size_t PageSize = 0x100000;
+        AddressSpaceBase = base_display_addr;
+        AddressSpaceSize = mem_size;
+        if (ViewBaseAddr >= mem_size)
+            ViewBaseAddr = 0;
+        if (Cols > 0)
+            ViewBaseAddr -= ViewBaseAddr % (size_t)Cols;
+        const size_t visible_size = mem_size > ViewBaseAddr ? (std::min)(PageSize, mem_size - ViewBaseAddr) : 0;
+        const size_t visible_base_display_addr = base_display_addr + ViewBaseAddr;
+        void* visible_mem_data = (void*)ViewBaseAddr;
+
         Sizes s;
-        CalcSizes(s, mem_size, base_display_addr);
+        CalcSizes(s, visible_size, visible_base_display_addr);
         ImGui::SetNextWindowSize(ImVec2(s.WindowWidth, s.WindowWidth * 0.60f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(s.WindowWidth, FLT_MAX));
 
         Open = true;
         if (ImGui::Begin(title, &Open, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
         {
-            DrawContents(mem_data, mem_size, base_display_addr);
+            DrawContents(visible_mem_data, visible_size, visible_base_display_addr);
             if (ContentsWidthChanged)
             {
-                CalcSizes(s, mem_size, base_display_addr);
+                CalcSizes(s, visible_size, visible_base_display_addr);
                 ImGui::SetWindowSize(ImVec2(s.WindowWidth, ImGui::GetWindowSize().y));
             }
         }
@@ -570,7 +592,17 @@ struct MemoryEditor
             size_t goto_addr;
             if (sscanf(AddrInputBuf, "%" _PRISizeT "X", &goto_addr) == 1)
             {
-                GotoAddr = goto_addr - base_display_addr;
+                constexpr size_t PageSize = 0x100000;
+                if (goto_addr >= AddressSpaceBase && goto_addr < AddressSpaceBase + AddressSpaceSize)
+                {
+                    const size_t logical_addr = goto_addr - AddressSpaceBase;
+                    ViewBaseAddr = (logical_addr / PageSize) * PageSize;
+                    if (Cols > 0)
+                        ViewBaseAddr -= ViewBaseAddr % (size_t)Cols;
+                    GotoAddr = logical_addr - ViewBaseAddr;
+                }
+                else
+                    GotoAddr = (size_t)-1;
                 HighlightMin = HighlightMax = (size_t)-1;
             }
         }

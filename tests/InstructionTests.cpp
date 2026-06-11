@@ -426,6 +426,41 @@ TestResult expectRuntimeError(const char* name, const std::vector<std::string>& 
 		return { name, false, "expected status " + std::to_string(expectedStatus) + ", got " + std::to_string(status) };
 	return { name, true, "" };
 }
+
+TestResult expectCompileErrorAtInvalidEip() {
+	resetMachine();
+	MemoryManager::getMemoryManager().ctx.EIP = 0xFFFF'FFFF;
+	StepStatus status = compileProgram({ "div ebx" });
+	if (status != EM_INVALID_ADDRESS)
+		return { "compile at invalid eip", false, "expected invalid address, got " + std::to_string(status) };
+	return { "compile at invalid eip", true, "" };
+}
+
+bool expectIndentedSemicolonComments(std::string& message) {
+	MemoryManager& mm = MemoryManager::getMemoryManager();
+	if (mm.ctx.EAX != 12) {
+		message = "EAX expected 12 with indented/commented code, got " + std::to_string(mm.ctx.EAX);
+		return false;
+	}
+	return true;
+}
+
+TestResult expectDbCommaList() {
+	resetMachine();
+	StepStatus status = compileProgram({ "values db 1, 2, \"A,B\", 0ffh ; bytes and string" });
+	if (status != EM_OK)
+		return { "db comma list", false, "compile failed: " + std::to_string(status) };
+
+	const BYTE expected[] = { 1, 2, 'A', ',', 'B', 0, 0xFF };
+	MemoryManager& mm = MemoryManager::getMemoryManager();
+	for (DWORD i = 0; i < sizeof(expected); ++i) {
+		BYTE actual = 0;
+		status = mm.readMem(kCodeBase + i, actual);
+		if (status != EM_OK || actual != expected[i])
+			return { "db comma list", false, "unexpected byte at " + std::to_string(i) };
+	}
+	return { "db comma list", true, "" };
+}
 }
 
 int main() {
@@ -435,6 +470,9 @@ int main() {
 		runCase("mov/add register",
 			{ "mov eax, 5", "add eax, 7", "int3" },
 			expectMovAdd),
+		runCase("indented semicolon comments",
+			{ "   mov eax, 5 ; first value", "   add eax, 7", "   int3 ; stop" },
+			expectIndentedSemicolonComments),
 		runCase("sub borrow flag",
 			{ "mov eax, 1", "sub eax, 2", "int3" },
 			expectSubBorrow),
@@ -489,7 +527,11 @@ int main() {
 			}),
 		expectRuntimeError("div by zero",
 			{ "mov edx, 0", "mov eax, 10", "mov ebx, 0", "div ebx", "int3" },
-			EM_INVALID_OPERAND),
+			EM_DIVISION_BY_ZERO),
+		expectRuntimeError("idiv by zero",
+			{ "mov edx, 0", "mov eax, 10", "mov ebx, 0", "idiv ebx", "int3" },
+			EM_DIVISION_BY_ZERO),
+		expectCompileErrorAtInvalidEip(),
 		runCase("inc/dec/not/neg",
 			{ "mov eax, 1", "inc eax", "dec eax", "not eax", "neg eax", "int3" },
 			expectIncDecNegNot),
@@ -639,6 +681,7 @@ int main() {
 				"int3"
 			},
 			expectDdData),
+		expectDbCommaList(),
 		expectIgnoredInputBeforeRequest()
 	};
 

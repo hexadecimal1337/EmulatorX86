@@ -49,6 +49,29 @@ std::string toLower(std::string text) {
 	return text;
 }
 
+std::string stripAsmComment(const std::string& line) {
+	bool inString = false;
+	bool escaped = false;
+	for (size_t i = 0; i < line.size(); ++i) {
+		char sym = line[i];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (sym == '\\' && inString) {
+			escaped = true;
+			continue;
+		}
+		if (sym == '"') {
+			inString = !inString;
+			continue;
+		}
+		if (sym == ';' && !inString)
+			return line.substr(0, i);
+	}
+	return line;
+}
+
 bool isFormatSpecifier(char specifier) {
 	switch (specifier) {
 	case 's':
@@ -205,8 +228,25 @@ StepStatus scanStackArguments(MemoryManager& mm, const std::string& format, cons
 std::vector<std::string> splitDataValues(const std::string& values) {
 	std::vector<std::string> result;
 	std::string current;
+	bool inString = false;
+	bool escaped = false;
 	for (char sym : values) {
-		if (sym == ',') {
+		if (escaped) {
+			current.push_back(sym);
+			escaped = false;
+			continue;
+		}
+		if (sym == '\\' && inString) {
+			current.push_back(sym);
+			escaped = true;
+			continue;
+		}
+		if (sym == '"') {
+			inString = !inString;
+			current.push_back(sym);
+			continue;
+		}
+		if (sym == ',' && !inString) {
 			result.push_back(trim(current));
 			current.clear();
 		}
@@ -216,6 +256,26 @@ std::vector<std::string> splitDataValues(const std::string& values) {
 	}
 	result.push_back(trim(current));
 	return result;
+}
+
+bool isQuotedString(const std::string& token) {
+	std::string text = trim(token);
+	if (text.size() < 2 || text.front() != '"' || text.back() != '"')
+		return false;
+	bool escaped = false;
+	for (size_t i = 1; i + 1 < text.size(); ++i) {
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (text[i] == '\\') {
+			escaped = true;
+			continue;
+		}
+		if (text[i] == '"')
+			return false;
+	}
+	return true;
 }
 
 bool parseDwordDataValue(const std::string& token, const std::vector<Label>& labels, DWORD& value) {
@@ -247,6 +307,14 @@ bool parseDwordDataValue(const std::string& token, const std::vector<Label>& lab
 	catch (...) {
 		return false;
 	}
+}
+
+bool parseByteDataValue(const std::string& token, const std::vector<Label>& labels, BYTE& value) {
+	DWORD dwordValue = 0;
+	if (!parseDwordDataValue(token, labels, dwordValue) || dwordValue > 0xFF)
+		return false;
+	value = (BYTE)dwordValue;
+	return true;
 }
 }
 
@@ -526,17 +594,18 @@ StepStatus InstructionManager::parseCode(const std::vector<std::string>& lines, 
 std::vector<Label> InstructionManager::getLabels(const std::vector<std::string>& lines) {
 	std::vector<Label> labels;
 	std::smatch matches;
-	std::regex reg(R"(^ *(\w+): *(?:$|\/\/[\w\W]*))");
+	std::regex reg(R"(^ *(\w+): *$)");
 	std::regex dataReg(R"(^ *(\w+) +(db|dd) +)");
 	for (int i = 0; i < lines.size();++i) {
-		if (std::regex_search(lines[i], matches, reg)) {
+		std::string line = stripAsmComment(lines[i]);
+		if (std::regex_search(line, matches, reg)) {
 			Label label;
 			label.name = matches[1].str();
 			label.line = i;
 			label.address = 0;
 			labels.push_back(label);
 		}
-		else if (std::regex_search(lines[i], matches, dataReg)) {
+		else if (std::regex_search(line, matches, dataReg)) {
 			Label label;
 			label.name = matches[1].str();
 			label.line = i;
@@ -558,14 +627,15 @@ void InstructionManager::setLabelsAddrs(std::vector<Label>& labels, const std::v
 }
 
 bool InstructionManager::isLabel(const std::string& line) {
-	const std::regex reg(R"(^ *(\w+): *(?:$|\/\/[\w\W]*))");
-	return std::regex_match(line, reg);
+	const std::regex reg(R"(^ *(\w+): *$)");
+	return std::regex_match(stripAsmComment(line), reg);
 }
 
 bool InstructionManager::isDataLine(const std::string& line) {
-	const std::regex dbReg("^ *(?:(\\w+) +)?db +\"((?:\\\\.|[^\"])*)\" *(?:$|//[\\w\\W]*)");
-	const std::regex ddReg(R"(^ *(?:(\w+) +)?dd +(.+?) *(?:$|\/\/[\w\W]*))");
-	return std::regex_match(line, dbReg) || std::regex_match(line, ddReg);
+	std::string code = stripAsmComment(line);
+	const std::regex dbReg(R"(^ *(?:(\w+) +)?db +(.+?) *$)");
+	const std::regex ddReg(R"(^ *(?:(\w+) +)?dd +(.+?) *$)");
+	return std::regex_match(code, dbReg) || std::regex_match(code, ddReg);
 }
 
 StepStatus InstructionManager::parseLine(const std::string& line, std::vector<BYTE>& bytesOut, const std::vector<Label>& labels) {
@@ -574,16 +644,17 @@ StepStatus InstructionManager::parseLine(const std::string& line, std::vector<BY
 	if (isDataLine(line))
 		return parseDataLine(line, bytesOut, labels);
 
+	std::string codeLine = stripAsmComment(line);
 	std::vector<BYTE> bytes;
 	std::smatch matches;
-	std::regex reg3(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
-	std::regex reg2(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
-	std::regex reg1(R"(^([a-z|A-Z]+) +([ \+\*\w\[\]]+) *(?:$|\/\/[\w\W]*))");
-	std::regex reg0(R"(^([a-z|A-Z|3]+) *(?:$|\/\/[\w\W]*))");
-	if(!std::regex_search(line, matches, reg3))
-		if(!std::regex_search(line, matches, reg2))
-			if(!std::regex_search(line, matches, reg1))
-				if(!std::regex_search(line, matches, reg0))
+	std::regex reg3(R"(^ *([a-zA-Z][a-zA-Z0-9]*) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *$)");
+	std::regex reg2(R"(^ *([a-zA-Z][a-zA-Z0-9]*) +([ \+\*\w\[\]]+), *([ \+\*\w\[\]]+) *$)");
+	std::regex reg1(R"(^ *([a-zA-Z][a-zA-Z0-9]*) +([ \+\*\w\[\]]+) *$)");
+	std::regex reg0(R"(^ *([a-zA-Z][a-zA-Z0-9]*|int3) *$)");
+	if(!std::regex_search(codeLine, matches, reg3))
+		if(!std::regex_search(codeLine, matches, reg2))
+			if(!std::regex_search(codeLine, matches, reg1))
+				if(!std::regex_search(codeLine, matches, reg0))
 					return EM_INVALID_SYNTAX;
 	bytes.push_back(parseOpcode(matches[1].str()));
 	if (bytes[0] == 0)
@@ -604,16 +675,28 @@ StepStatus InstructionManager::parseLine(const std::string& line, std::vector<BY
 
 StepStatus InstructionManager::parseDataLine(const std::string& line, std::vector<BYTE>& bytes, const std::vector<Label>& labels) {
 	std::smatch matches;
-	const std::regex dbReg("^ *(?:(\\w+) +)?db +\"((?:\\\\.|[^\"])*)\" *(?:$|//[\\w\\W]*)");
-	if (std::regex_match(line, matches, dbReg)) {
-		std::string decoded = parseStringLiteral(matches[2].str());
-		bytes.insert(bytes.end(), decoded.begin(), decoded.end());
-		bytes.push_back(0);
+	std::string codeLine = stripAsmComment(line);
+	const std::regex dbReg(R"(^ *(?:(\w+) +)?db +(.+?) *$)");
+	if (std::regex_match(codeLine, matches, dbReg)) {
+		for (const std::string& token : splitDataValues(matches[2].str())) {
+			if (isQuotedString(token)) {
+				std::string text = trim(token);
+				std::string decoded = parseStringLiteral(text.substr(1, text.size() - 2));
+				bytes.insert(bytes.end(), decoded.begin(), decoded.end());
+				bytes.push_back(0);
+			}
+			else {
+				BYTE value = 0;
+				if (!parseByteDataValue(token, labels, value))
+					return EM_INVALID_SYNTAX;
+				bytes.push_back(value);
+			}
+		}
 		return EM_OK;
 	}
 
-	const std::regex ddReg(R"(^ *(?:(\w+) +)?dd +(.+?) *(?:$|\/\/[\w\W]*))");
-	if (!std::regex_match(line, matches, ddReg))
+	const std::regex ddReg(R"(^ *(?:(\w+) +)?dd +(.+?) *$)");
+	if (!std::regex_match(codeLine, matches, ddReg))
 		return EM_INVALID_SYNTAX;
 
 	for (const std::string& token : splitDataValues(matches[2].str())) {
@@ -863,8 +946,8 @@ const std::map<std::string, OperandType>& InstructionManager::getOperandDict() {
 }
 
 bool InstructionManager::isEmptyLine(const std::string& line) {
-	const std::regex reg(R"(^ *(?:$|\/\/[\w\W]*))");
-	return std::regex_match(line,reg);
+	const std::regex reg(R"(^ *$)");
+	return std::regex_match(stripAsmComment(line),reg);
 }
 
 bool InstructionManager::validateEmulatedAddress(OperandData op) {
@@ -996,25 +1079,34 @@ StepStatus InstructionManager::validateInstruction(const std::vector<BYTE> bytes
 	std::vector<BYTE> reserve(bytes.size() + 5);
 	StepStatus status = EM_OK;
 	for (int i = 0; i < reserve.size() && status == EM_OK; ++i) {
+		unsigned long long addr = (unsigned long long)mm.ctx.EIP + i;
+		if (addr > 0xFFFF'FFFFull)
+			return EM_INVALID_ADDRESS;
 		BYTE byte;
-		status = mm.readMem(mm.ctx.EIP + i, byte);
+		status = mm.readMem((DWORD)addr, byte);
 		reserve[i] = byte;
 	}
 	if (status != EM_OK)
 		return status;
 	for (int i = 0; i < bytes.size() + 5 && status == EM_OK; ++i) {
+		unsigned long long addr = (unsigned long long)mm.ctx.EIP + i;
+		if (addr > 0xFFFF'FFFFull)
+			return EM_INVALID_ADDRESS;
 		if (i < bytes.size())
-			status = mm.writeMem(mm.ctx.EIP + i, bytes[i]);
+			status = mm.writeMem((DWORD)addr, bytes[i]);
 		else
-			status = mm.writeMem(mm.ctx.EIP + i, BYTE(0));
+			status = mm.writeMem((DWORD)addr, BYTE(0));
 	}
 	
 	InstructionData instData;
 	if(status == EM_OK)
 		status = decodeInstruction(instData);
 
-	for (int i = 0; i < reserve.size(); ++i)
-		mm.writeMem(mm.ctx.EIP + i, reserve[i]);
+	for (int i = 0; i < reserve.size(); ++i) {
+		unsigned long long addr = (unsigned long long)mm.ctx.EIP + i;
+		if (addr <= 0xFFFF'FFFFull)
+			mm.writeMem((DWORD)addr, reserve[i]);
+	}
 
 	return status;
 }
@@ -2012,7 +2104,7 @@ StepStatus InstructionManager::decodeDIV(InstructionData& instData) {
 StepStatus InstructionManager::processDIV(InstructionData instData) {
 	DWORD divisor = readOperand(instData.op1, 4);
 	if (divisor == 0)
-		return EM_INVALID_OPERAND;
+		return EM_DIVISION_BY_ZERO;
 	unsigned long long dividend = ((unsigned long long)mm.ctx.EDX << 32) | mm.ctx.EAX;
 	if (dividend / divisor > 0xFFFF'FFFFull)
 		return EM_INVALID_OPERAND;
@@ -2032,7 +2124,7 @@ StepStatus InstructionManager::decodeIDIV(InstructionData& instData) {
 StepStatus InstructionManager::processIDIV(InstructionData instData) {
 	int divisor = (int)readOperand(instData.op1, 4);
 	if (divisor == 0)
-		return EM_INVALID_OPERAND;
+		return EM_DIVISION_BY_ZERO;
 	long long dividend = ((long long)(int)mm.ctx.EDX << 32) | mm.ctx.EAX;
 	long long quotient = dividend / divisor;
 	if (quotient < (std::numeric_limits<int>::min)() || quotient > (std::numeric_limits<int>::max)())

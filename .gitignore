@@ -4,3 +4,13 @@ Settings.bin
 test.dmp
 Build/
 .vs
+*.pptx
+*.txt
+*.docx
+*.pdf
+*.asm
+*.pyc
+__pycache__/
+!docs/
+!docs/**
+docs/~$*.docx
