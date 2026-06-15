@@ -94,6 +94,54 @@ void applyPurpleStyle() {
 	styles.WindowTitleAlign.x = 0.5f;
 	styles.SeparatorTextAlign.x = 0.5f;
 }
+void applyLightStyle() {
+	ImGui::StyleColorsLight();
+	ImGuiStyle& style = ImGui::GetStyle();
+	auto& colors = style.Colors;
+	const ImVec4 accent = ImVec4(0.18f, 0.38f, 0.72f, 1.0f);
+	const ImVec4 accentHovered = ImVec4(0.24f, 0.47f, 0.84f, 1.0f);
+
+	colors[ImGuiCol_Text] = ImVec4(0.12f, 0.14f, 0.18f, 1.0f);
+	colors[ImGuiCol_TextDisabled] = ImVec4(0.47f, 0.50f, 0.56f, 1.0f);
+	colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.96f, 0.98f, 1.0f);
+	colors[ImGuiCol_ChildBg] = ImVec4(0.98f, 0.98f, 0.99f, 1.0f);
+	colors[ImGuiCol_PopupBg] = ImVec4(0.99f, 0.99f, 1.0f, 0.98f);
+	colors[ImGuiCol_Border] = ImVec4(0.69f, 0.72f, 0.78f, 0.75f);
+	colors[ImGuiCol_BorderShadow] = ImVec4(0.35f, 0.39f, 0.47f, 0.10f);
+	colors[ImGuiCol_FrameBg] = ImVec4(0.88f, 0.90f, 0.94f, 1.0f);
+	colors[ImGuiCol_FrameBgHovered] = ImVec4(0.82f, 0.86f, 0.93f, 1.0f);
+	colors[ImGuiCol_FrameBgActive] = ImVec4(0.76f, 0.82f, 0.92f, 1.0f);
+	colors[ImGuiCol_TitleBg] = ImVec4(0.88f, 0.90f, 0.94f, 1.0f);
+	colors[ImGuiCol_TitleBgActive] = ImVec4(0.80f, 0.85f, 0.94f, 1.0f);
+	colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.90f, 0.91f, 0.94f, 1.0f);
+	colors[ImGuiCol_MenuBarBg] = ImVec4(0.91f, 0.93f, 0.96f, 1.0f);
+	colors[ImGuiCol_ScrollbarBg] = ImVec4(0.91f, 0.92f, 0.95f, 1.0f);
+	colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.65f, 0.69f, 0.76f, 1.0f);
+	colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.53f, 0.59f, 0.70f, 1.0f);
+	colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.42f, 0.50f, 0.64f, 1.0f);
+	colors[ImGuiCol_CheckMark] = accent;
+	colors[ImGuiCol_SliderGrab] = accent;
+	colors[ImGuiCol_SliderGrabActive] = accentHovered;
+	colors[ImGuiCol_Button] = ImVec4(0.84f, 0.87f, 0.92f, 1.0f);
+	colors[ImGuiCol_ButtonHovered] = ImVec4(0.75f, 0.81f, 0.91f, 1.0f);
+	colors[ImGuiCol_ButtonActive] = ImVec4(0.67f, 0.75f, 0.88f, 1.0f);
+	colors[ImGuiCol_Header] = ImVec4(0.78f, 0.83f, 0.92f, 1.0f);
+	colors[ImGuiCol_HeaderHovered] = ImVec4(0.69f, 0.77f, 0.90f, 1.0f);
+	colors[ImGuiCol_HeaderActive] = ImVec4(0.61f, 0.71f, 0.87f, 1.0f);
+	colors[ImGuiCol_Separator] = ImVec4(0.55f, 0.62f, 0.73f, 0.75f);
+	colors[ImGuiCol_SeparatorHovered] = accentHovered;
+	colors[ImGuiCol_SeparatorActive] = accent;
+	colors[ImGuiCol_ResizeGrip] = ImVec4(accent.x, accent.y, accent.z, 0.25f);
+	colors[ImGuiCol_ResizeGripHovered] = ImVec4(accentHovered.x, accentHovered.y, accentHovered.z, 0.55f);
+	colors[ImGuiCol_ResizeGripActive] = accentHovered;
+	colors[ImGuiCol_Tab] = ImVec4(0.84f, 0.87f, 0.92f, 1.0f);
+	colors[ImGuiCol_TabHovered] = ImVec4(0.72f, 0.79f, 0.91f, 1.0f);
+	colors[ImGuiCol_TabActive] = ImVec4(0.76f, 0.82f, 0.92f, 1.0f);
+	colors[ImGuiCol_TabUnfocused] = ImVec4(0.88f, 0.90f, 0.94f, 1.0f);
+	colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.82f, 0.86f, 0.93f, 1.0f);
+	colors[ImGuiCol_DockingPreview] = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+	colors[ImGuiCol_NavCursor] = accent;
+}
 void applyHighContrastStyle() {
 	ImGui::StyleColorsDark();
 	ImGuiStyle& style = ImGui::GetStyle();
@@ -306,7 +354,7 @@ void GUI::applyAppearanceSettings() {
 	ImGui::GetIO().FontGlobalScale = fontScale(sm.set.uiFontSize);
 	switch (sm.set.appTheme) {
 	case APP_THEME_LIGHT:
-		ImGui::StyleColorsLight();
+		applyLightStyle();
 		break;
 	case APP_THEME_BLUE:
 		ImGui::StyleColorsClassic();
@@ -543,8 +591,18 @@ void ProgramConsoleWindow::render(bool* open, const Settings& settings) {
 
     ImGui::Separator();
     float inputHeight = ImGui::GetFrameHeightWithSpacing();
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colorFromSetting(settings.consoleBgColor));
-    ImGui::PushStyleColor(ImGuiCol_Text, colorFromSetting(settings.consoleTextColor));
+	const Settings defaults;
+	const bool usesDefaultConsoleBackground =
+		settings.consoleBgColor == defaults.consoleBgColor ||
+		settings.consoleBgColor == 0xff000000;
+	const bool useLightConsoleDefaults =
+		settings.appTheme == APP_THEME_LIGHT &&
+		usesDefaultConsoleBackground &&
+		settings.consoleTextColor == defaults.consoleTextColor;
+	const uint32_t consoleBgColor = useLightConsoleDefaults ? 0xffe1e4e8 : settings.consoleBgColor;
+	const uint32_t consoleTextColor = useLightConsoleDefaults ? 0xff25282d : settings.consoleTextColor;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colorFromSetting(consoleBgColor));
+    ImGui::PushStyleColor(ImGuiCol_Text, colorFromSetting(consoleTextColor));
     ImGui::BeginChild("ProgramConsoleOutput", ImVec2(0, -inputHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
     std::string output = console.getOutput();
     ImGui::TextUnformatted(output.c_str());
@@ -585,13 +643,22 @@ void Assembler::applySettings(const Settings& settings) {
 	TextEditor::Palette palette = settings.appTheme == APP_THEME_LIGHT ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette();
 	if (settings.appTheme == APP_THEME_BLUE)
 		palette = TextEditor::GetRetroBluePalette();
-	palette[(int)TextEditor::PaletteIndex::KnownIdentifier] = settings.asmInstructionColor;
-	palette[(int)TextEditor::PaletteIndex::Keyword] = settings.asmRegisterColor;
-	palette[(int)TextEditor::PaletteIndex::Number] = settings.asmNumberColor;
-	palette[(int)TextEditor::PaletteIndex::String] = settings.asmStringColor;
-	palette[(int)TextEditor::PaletteIndex::Comment] = settings.asmCommentColor;
-	palette[(int)TextEditor::PaletteIndex::Identifier] = settings.asmLabelColor;
-	palette[(int)TextEditor::PaletteIndex::ErrorMarker] = settings.asmErrorColor;
+	const Settings defaults;
+	const bool useLightDefaults = settings.appTheme == APP_THEME_LIGHT;
+	if (!useLightDefaults || settings.asmInstructionColor != defaults.asmInstructionColor)
+		palette[(int)TextEditor::PaletteIndex::KnownIdentifier] = settings.asmInstructionColor;
+	if (!useLightDefaults || settings.asmRegisterColor != defaults.asmRegisterColor)
+		palette[(int)TextEditor::PaletteIndex::Keyword] = settings.asmRegisterColor;
+	if (!useLightDefaults || settings.asmNumberColor != defaults.asmNumberColor)
+		palette[(int)TextEditor::PaletteIndex::Number] = settings.asmNumberColor;
+	if (!useLightDefaults || settings.asmStringColor != defaults.asmStringColor)
+		palette[(int)TextEditor::PaletteIndex::String] = settings.asmStringColor;
+	if (!useLightDefaults || settings.asmCommentColor != defaults.asmCommentColor)
+		palette[(int)TextEditor::PaletteIndex::Comment] = settings.asmCommentColor;
+	if (!useLightDefaults || settings.asmLabelColor != defaults.asmLabelColor)
+		palette[(int)TextEditor::PaletteIndex::Identifier] = settings.asmLabelColor;
+	if (!useLightDefaults || settings.asmErrorColor != defaults.asmErrorColor)
+		palette[(int)TextEditor::PaletteIndex::ErrorMarker] = settings.asmErrorColor;
 	textEditor.SetPalette(palette);
 	textEditor.SetShowLineNumbers(settings.editorShowLineNumbers);
 	textEditor.SetHighlightCurrentLine(settings.editorHighlightCurrentLine);
